@@ -1,0 +1,8 @@
+{
+  "name": "Remix Intensive Offline: Student Details",
+  "description": "Comprehensive student details dashboard with pivot tables, bar charts, search filters, and an AI chat assistant programmed with student database query capabilities.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
