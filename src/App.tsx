@@ -144,18 +144,28 @@ export default function App() {
   const [showPassword, setShowPassword] = useState<boolean>(false);
 
   const [students, setStudents] = useState<Student[]>(() => {
+    const defaultParsed = parseStudentCSV(DEFAULT_STUDENT_CSV);
     const localCSV = localStorage.getItem("nxtwave_custom_csv");
     if (localCSV) {
       const parsed = parseStudentCSV(localCSV);
-      if (parsed.length > 0) {
+      // If local storage has at least as many records as default (1600), use it; otherwise prefer the full default dataset
+      if (parsed.length >= defaultParsed.length && parsed.length > 0) {
         return parsed;
       }
     }
-    return parseStudentCSV(DEFAULT_STUDENT_CSV);
+    return defaultParsed;
   });
   
   const [rawCSV, setRawCSV] = useState<string>(() => {
-    return localStorage.getItem("nxtwave_custom_csv") || DEFAULT_STUDENT_CSV;
+    const defaultParsed = parseStudentCSV(DEFAULT_STUDENT_CSV);
+    const localCSV = localStorage.getItem("nxtwave_custom_csv");
+    if (localCSV) {
+      const parsed = parseStudentCSV(localCSV);
+      if (parsed.length >= defaultParsed.length && parsed.length > 0) {
+        return localCSV;
+      }
+    }
+    return DEFAULT_STUDENT_CSV;
   });
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(() => {
@@ -164,7 +174,8 @@ export default function App() {
       const parsed = parseStudentCSV(localCSV);
       if (parsed.length > 0) return parsed[0].studentId;
     }
-    return "I25A1001"; // Default preselect first student
+    const defaultParsed = parseStudentCSV(DEFAULT_STUDENT_CSV);
+    return defaultParsed.length > 0 ? defaultParsed[0].studentId : null;
   });
   const isDarkMode = false;
   

@@ -125,7 +125,10 @@ export function parseStudentCSV(csvText: string): Student[] {
       externalPlacedOrganisation: row["external placed organisation"] || row["external placed organization"] || "",
       placementType: row["placement type"] || "",
       placedMonth: row["placed month"] || "",
-      ctcLpa: row["ctc(lpa)"] || row["ctclpa"] || row["ctc lpa"] || ""
+      ctcLpa: row["ctc(lpa)"] || row["ctclpa"] || row["ctc lpa"] || "",
+      profilePhoto: row["profile photo"] || row["photo"] || "",
+      resume: row["resume"] || row["your resume"] || "",
+      instructorName: row["instructor name"] || ""
     };
 
     students.push(s);

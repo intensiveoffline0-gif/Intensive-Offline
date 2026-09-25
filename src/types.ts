@@ -29,6 +29,9 @@ export interface Student {
   placementType: string;
   placedMonth: string;
   ctcLpa: string;
+  profilePhoto?: string;
+  resume?: string;
+  instructorName?: string;
 }
 
 export interface ChatMessage {

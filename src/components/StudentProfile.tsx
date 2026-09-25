@@ -2,7 +2,8 @@ import React from "react";
 import { Student } from "../types";
 import { 
   User, Mail, Phone, MapPin, GraduationCap, Calendar, 
-  Briefcase, Award, ClipboardCheck, Sparkles, Building, Bookmark
+  Briefcase, Award, ClipboardCheck, Sparkles, Building, Bookmark,
+  FileText, ExternalLink
 } from "lucide-react";
 
 interface StudentProfileProps {
@@ -28,7 +29,19 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300">
       {/* Header Banner */}
       <div className="bg-slate-900 px-6 py-8 text-white relative">
-        <div className="absolute right-4 top-4">
+        <div className="absolute right-4 top-4 flex items-center gap-2">
+          {student.resume && (
+            <a 
+              href={student.resume} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="flex items-center gap-1.5 bg-blue-500/30 hover:bg-blue-500/50 text-blue-200 border border-blue-400/40 px-3 py-1 rounded-full text-xs font-semibold transition-all"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span>Resume</span>
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
           <span className={`text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider ${
             isRefunded ? "bg-red-400/20 text-red-300 border border-red-400/30" : "bg-emerald-400/20 text-emerald-300 border border-emerald-400/30"
           }`}>
@@ -37,9 +50,21 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
         </div>
         
         <div className="flex items-center gap-4">
-          <div className="h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center font-extrabold text-2xl text-white shadow-inner">
-            {student.fullName.charAt(0)}
-          </div>
+          {student.profilePhoto ? (
+            <img 
+              src={student.profilePhoto} 
+              alt={student.fullName}
+              className="h-16 w-16 rounded-full object-cover border-2 border-white/20 shadow-inner bg-slate-800"
+              onError={(e) => {
+                // fallback to letter avatar if image URL fails to load
+                (e.target as HTMLElement).style.display = "none";
+              }}
+            />
+          ) : (
+            <div className="h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center font-extrabold text-2xl text-white shadow-inner">
+              {student.fullName.charAt(0)}
+            </div>
+          )}
           <div>
             <h2 className="text-xl font-bold flex items-center gap-1.5">{student.fullName}</h2>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-slate-300">
@@ -88,10 +113,16 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
                 <span className="text-slate-500">Timing Slot</span>
                 <span className="font-semibold text-slate-700">{student.batchTiming}</span>
               </div>
-              <div className="flex justify-between items-center py-1.5">
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
                 <span className="text-slate-500">Gender</span>
-                <span className="font-semibold text-slate-700">{student.gender}</span>
+                <span className="font-semibold text-slate-700">{student.gender || "N/A"}</span>
               </div>
+              {student.instructorName && (
+                <div className="flex justify-between items-center py-1.5">
+                  <span className="text-slate-500">Instructor</span>
+                  <span className="font-semibold text-blue-600">{student.instructorName}</span>
+                </div>
+              )}
             </div>
           </div>
 

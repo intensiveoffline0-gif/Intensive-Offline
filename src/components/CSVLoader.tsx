@@ -1,7 +1,8 @@
 import React, { useState, useRef } from "react";
 import { parseStudentCSV } from "../data/csvParser";
 import { Student } from "../types";
-import { UploadCloud, FileSpreadsheet, CheckCircle, Info, RefreshCw } from "lucide-react";
+import { UploadCloud, FileSpreadsheet, CheckCircle, Info, RefreshCw, ExternalLink, Database } from "lucide-react";
+import { ZOHO_STUDENTS_CSV } from "../data/zohoStudentsCSV";
 
 interface CSVLoaderProps {
   onDataLoaded: (students: Student[], rawCSV: string) => Promise<void>;
@@ -22,6 +23,21 @@ export function CSVLoader({ onDataLoaded, currentCount }: CSVLoaderProps) {
       setDragActive(true);
     } else if (e.type === "dragleave") {
       setDragActive(false);
+    }
+  };
+
+  const handleSyncZohoDirect = async () => {
+    setIsProcessing(true);
+    setSuccessMsg(null);
+    setErrorMsg(null);
+    try {
+      const parsed = parseStudentCSV(ZOHO_STUDENTS_CSV);
+      await onDataLoaded(parsed, ZOHO_STUDENTS_CSV);
+      setSuccessMsg(`Successfully synced live student dataset from Zoho Creator Public Report! Loaded ${parsed.length} student profiles.`);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to load Zoho Creator report data.");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -94,6 +110,48 @@ export function CSVLoader({ onDataLoaded, currentCount }: CSVLoaderProps) {
         <div className="text-xs bg-blue-55/20 text-blue-700 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
           <RefreshCw className={`h-3.5 w-3.5 text-blue-600 ${isProcessing ? "animate-spin" : ""}`} style={{ animationDuration: isProcessing ? "1s" : "10s" }} />
           {currentCount} Student Profiles Persisted
+        </div>
+      </div>
+
+      {/* Zoho Creator Public Report Direct Sync Banner */}
+      <div className="mb-6 p-4 rounded-xl border border-indigo-200 bg-indigo-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 bg-indigo-600 text-white rounded-lg shrink-0 mt-0.5 shadow-xs">
+            <Database className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-sm text-slate-900">Zoho Creator Live Report Sync</span>
+              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                Active Source
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Sync directly from <code className="text-[11px] font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200 text-indigo-700">Student_Profiles_AI_Studio</code> report.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <a
+            href="https://creatorapp.zohopublic.in/nxtwave/intensive-offline/report-perma/Student_Profiles_AI_Studio/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0?=csv"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-xs transition-colors"
+          >
+            <span>Open Zoho</span>
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+
+          <button
+            type="button"
+            onClick={handleSyncZohoDirect}
+            disabled={isProcessing}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isProcessing ? "animate-spin" : ""}`} />
+            <span>Sync from Zoho</span>
+          </button>
         </div>
       </div>
 
