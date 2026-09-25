@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://intensive-offline-student-details-1008830782715.asia-southeast1.run.app/api/:path*"
+    }
+  ]
+}
