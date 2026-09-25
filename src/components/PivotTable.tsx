@@ -48,6 +48,7 @@ export function PivotTable({ students }: PivotTableProps) {
   const dimensionOptions = [
     { label: "Batch Details", value: "batchDetails" },
     { label: "Active Status", value: "activeStatus" },
+    { label: "Centre Name", value: "centreName" },
     { label: "Preferred Job Track", value: "preferredJobTrack" },
     { label: "Gender", value: "gender" },
     { label: "State", value: "state" },
@@ -91,16 +92,24 @@ export function PivotTable({ students }: PivotTableProps) {
     return String(val).trim();
   };
 
-  // Compute Pivot Grid
+  // Compute Pivot Grid (excluding "Changed Program" as requested)
   const pivotData = useMemo(() => {
+    // Filter out Changed Program records
+    const validStudents = students.filter(s => {
+      const status = (s.activeStatus || "").trim().toLowerCase();
+      return status !== "changed program";
+    });
+
     // Unique row titles
     const rowSet = new Set<string>();
     // Unique col titles
     const colSet = new Set<string>();
 
-    students.forEach(s => {
-      rowSet.add(getFieldValue(s, rowDim));
-      colSet.add(getFieldValue(s, colDim));
+    validStudents.forEach(s => {
+      const r = getFieldValue(s, rowDim);
+      const c = getFieldValue(s, colDim);
+      if (r !== "Changed Program") rowSet.add(r);
+      if (c !== "Changed Program") colSet.add(c);
     });
 
     const getBatchIndex = (name: string): number => {
@@ -146,7 +155,7 @@ export function PivotTable({ students }: PivotTableProps) {
       });
     });
 
-    students.forEach(s => {
+    validStudents.forEach(s => {
       const r = getFieldValue(s, rowDim);
       const c = getFieldValue(s, colDim);
       if (matrix[r] && matrix[r][c]) {

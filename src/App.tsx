@@ -256,55 +256,6 @@ export default function App() {
     fetchSavedData();
   }, []);
 
-  // User Inactivity Timer - Auto Lock after 10 minutes (600,000 ms) of inactivity
-  useEffect(() => {
-    if (!isLoggedIn && !isAdmin) return;
-
-    let timeoutId: any;
-
-    const resetTimer = () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      
-      timeoutId = setTimeout(() => {
-        console.log("Inactivity detected for 10 minutes. Auto-locking Admin Mode and Main Lock.");
-        
-        // 1. Lock Admin Mode
-        setIsAdmin(false);
-        sessionStorage.setItem("nxtwave_is_admin", "false");
-        sessionStorage.removeItem("nxtwave_admin_pin");
-        
-        // 2. Lock Main App Portal (Log Out)
-        setIsLoggedIn(false);
-        localStorage.removeItem("nxtwave_user_logged_in");
-        
-        // Reset login inputs & redirect away from loader tab if active
-        setUserIdInput("");
-        setPasswordInput("");
-        if (activeTab === "loader") {
-          setActiveTab("dashboard");
-        }
-      }, 10 * 60 * 1000); // 10 minutes
-    };
-
-    // Listeners for user activity
-    const activityEvents = ["mousedown", "mousemove", "keypress", "scroll", "touchstart", "click"];
-    
-    activityEvents.forEach((event) => {
-      window.addEventListener(event, resetTimer);
-    });
-
-    // Initialize timer
-    resetTimer();
-
-    // Clean up
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      activityEvents.forEach((event) => {
-        window.removeEventListener(event, resetTimer);
-      });
-    };
-  }, [isLoggedIn, isAdmin, activeTab]);
-
   // Helper to persist company logo to server-side backend storage
   const saveLogoToServer = async (logoBase64: string | null) => {
     const savedPin = sessionStorage.getItem("nxtwave_admin_pin") || "admin0929";
@@ -321,6 +272,7 @@ export default function App() {
 
   // Filter States
   const [searchQuery, setSearchName] = useState<string>("");
+  const [filterCentre, setFilterCentre] = useState<string>("All");
   const [filterCollege, setFilterCollege] = useState<string>("All");
   const [filterDistrict, setFilterDistrict] = useState<string>("All");
   const [filterState, setFilterState] = useState<string>("All");
@@ -364,6 +316,16 @@ export default function App() {
   }, [students, selectedStudentId]);
  
   // Derived lists for dropdown filters
+  const centresList = useMemo(() => {
+    const list = new Set<string>();
+    students.forEach(s => {
+      if (s.centreName && s.centreName.trim()) {
+        list.add(s.centreName.trim());
+      }
+    });
+    return Array.from(list).sort();
+  }, [students]);
+
   const collegesList = useMemo(() => {
     const list = new Set<string>();
     students.forEach(s => {
@@ -432,6 +394,17 @@ export default function App() {
   }, [students]);
 
   // Counts for Dropdowns to view in-bucket volume easily
+  const centreCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    students.forEach(s => {
+      if (s.centreName && s.centreName.trim()) {
+        const val = s.centreName.trim();
+        counts[val] = (counts[val] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [students]);
+
   const collegeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     students.forEach(s => {
@@ -517,6 +490,7 @@ export default function App() {
         s.studentId.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.personalMailId.toLowerCase().includes(searchQuery.toLowerCase());
       
+      const matchCentre = filterCentre === "All" || (s.centreName || "").trim().toUpperCase() === filterCentre.trim().toUpperCase();
       const matchCollege = filterCollege === "All" || s.graduationCollegeName === filterCollege;
       const matchDistrict = filterDistrict === "All" || s.district === filterDistrict;
       const matchState = filterState === "All" || s.state === filterState;
@@ -556,9 +530,9 @@ export default function App() {
         }
       }
 
-      return matchSearch && matchCollege && matchDistrict && matchState && matchPlacedStatus && matchTrack && matchDate && matchBatch;
+      return matchSearch && matchCentre && matchCollege && matchDistrict && matchState && matchPlacedStatus && matchTrack && matchDate && matchBatch;
     });
-  }, [students, searchQuery, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterStartDate, filterEndDate, filterBatch]);
+  }, [students, searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterStartDate, filterEndDate, filterBatch]);
 
   // Aggregate Core Metrics (KPIs)
   const stats = useMemo(() => {
@@ -598,11 +572,11 @@ export default function App() {
   // Safe encoding wrapper to prevent breakage with URI Special chars
   const triggerCSVDownload = () => {
     const header = [
-      "Full Name", "Student ID", "Batch Details", "Active Status", "District", 
+      "Full Name", "Student ID", "Batch Details", "Centre Name", "Active Status", "District", 
       "Graduation College", "Graduation Year", "Enrolled On", "Branch"
     ];
     const rows = filteredRegistryStudents.map(s => [
-      s.fullName, s.studentId, s.batchDetails, s.activeStatus, s.district,
+      s.fullName, s.studentId, s.batchDetails, s.centreName || "", s.activeStatus, s.district,
       s.graduationCollegeName, s.graduationYearOfPassing, s.enrolledOn, s.preferredJobTrack
     ]);
     
@@ -994,6 +968,16 @@ export default function App() {
                 />
 
                 <SearchableDropdown
+                  label="Centre Names"
+                  options={centresList}
+                  value={filterCentre}
+                  onChange={setFilterCentre}
+                  counts={centreCounts}
+                  totalCount={students.length}
+                  placeholder="-Select Centre-"
+                />
+
+                <SearchableDropdown
                   label="Colleges"
                   options={collegesList}
                   value={filterCollege}
@@ -1096,6 +1080,16 @@ export default function App() {
               />
 
               <SearchableDropdown
+                label="Centre Names"
+                options={centresList}
+                value={filterCentre}
+                onChange={setFilterCentre}
+                counts={centreCounts}
+                totalCount={students.length}
+                placeholder="-Select Centre-"
+              />
+
+              <SearchableDropdown
                 label="Colleges"
                 options={collegesList}
                 value={filterCollege}
@@ -1155,6 +1149,7 @@ export default function App() {
                       <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">Your Full Name</th>
                       <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">Student ID</th>
                       <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">Batch Details</th>
+                      <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">Centre Name</th>
                       <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">District</th>
                       <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">State</th>
                       <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">Graduation College / University Name</th>
@@ -1181,6 +1176,15 @@ export default function App() {
                           </td>
                           <td className="py-3 px-4 font-mono font-semibold text-blue-600 dark:text-blue-400">{student.studentId}</td>
                           <td className="py-3 px-4 text-slate-600 dark:text-slate-450">{student.batchDetails || "—"}</td>
+                          <td className="py-3 px-4">
+                            {student.centreName ? (
+                              <span className="bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                                {student.centreName}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
                           <td className="py-3 px-4 text-slate-600 dark:text-slate-450">{student.district || "—"}</td>
                           <td className="py-3 px-4 text-slate-600 dark:text-slate-450">{student.state || "—"}</td>
                           <td className="py-3 px-4 max-w-xs truncate text-slate-600 dark:text-slate-450" title={student.graduationCollegeName}>{student.graduationCollegeName || "—"}</td>
@@ -1192,7 +1196,7 @@ export default function App() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={8} className="py-12 text-center text-slate-400 dark:text-slate-600 font-bold">
+                        <td colSpan={9} className="py-12 text-center text-slate-400 dark:text-slate-600 font-bold">
                           No matching active student profiles detected for current criteria.
                         </td>
                       </tr>

@@ -128,7 +128,8 @@ export function parseStudentCSV(csvText: string): Student[] {
       ctcLpa: row["ctc(lpa)"] || row["ctclpa"] || row["ctc lpa"] || "",
       profilePhoto: row["profile photo"] || row["photo"] || "",
       resume: row["resume"] || row["your resume"] || "",
-      instructorName: row["instructor name"] || ""
+      instructorName: row["instructor name"] || "",
+      centreName: row["centre name"] || row["center name"] || row["centre"] || row["center"] || ""
     };
 
     students.push(s);

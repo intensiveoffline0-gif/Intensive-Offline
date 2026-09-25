@@ -117,6 +117,12 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
                 <span className="text-slate-500">Gender</span>
                 <span className="font-semibold text-slate-700">{student.gender || "N/A"}</span>
               </div>
+              {student.centreName && (
+                <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                  <span className="text-slate-500">Centre Name</span>
+                  <span className="font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded text-[11px]">{student.centreName}</span>
+                </div>
+              )}
               {student.instructorName && (
                 <div className="flex justify-between items-center py-1.5">
                   <span className="text-slate-500">Instructor</span>

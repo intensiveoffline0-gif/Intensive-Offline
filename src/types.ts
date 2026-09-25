@@ -32,6 +32,7 @@ export interface Student {
   profilePhoto?: string;
   resume?: string;
   instructorName?: string;
+  centreName?: string;
 }
 
 export interface ChatMessage {
