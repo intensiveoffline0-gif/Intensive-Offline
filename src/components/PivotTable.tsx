@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { Student } from "../types";
-import { Table, LayoutGrid, CheckCircle } from "lucide-react";
+import { Table, LayoutGrid, CheckCircle, MapPin, Filter } from "lucide-react";
 
 interface PivotTableProps {
   students: Student[];
@@ -10,6 +10,19 @@ export function PivotTable({ students }: PivotTableProps) {
   const [rowDim, setRowDim] = useState<string>("batchDetails");
   const [colDim, setColDim] = useState<string>("activeStatus");
   const [metric, setMetric] = useState<string>("count");
+  const [selectedCentre, setSelectedCentre] = useState<string>("All");
+
+  // Dynamically extract all available Centre Names
+  const centreOptions = useMemo(() => {
+    const set = new Set<string>();
+    students.forEach(s => {
+      const c = (s.centreName || "").trim();
+      if (c) {
+        set.add(c);
+      }
+    });
+    return Array.from(set).sort();
+  }, [students]);
 
   // Dynamically compute valid batches based on the active student dataset
   const dynamicBatches = useMemo(() => {
@@ -17,7 +30,7 @@ export function PivotTable({ students }: PivotTableProps) {
     students.forEach(s => {
       if (s.batchDetails) {
         const b = s.batchDetails.trim().toUpperCase();
-        if (b) {
+        if (b && !b.toLowerCase().includes("changed program")) {
           batchesSet.add(b);
         }
       }
@@ -92,13 +105,33 @@ export function PivotTable({ students }: PivotTableProps) {
     return String(val).trim();
   };
 
-  // Compute Pivot Grid (excluding "Changed Program" as requested)
+  // Compute Pivot Grid (strictly excluding "Changed Program" and filtering by Centre Name)
   const pivotData = useMemo(() => {
-    // Filter out Changed Program records
+    // 1. Strictly filter out Changed Program records and filter by Centre Name
     const validStudents = students.filter(s => {
       const status = (s.activeStatus || "").trim().toLowerCase();
-      return status !== "changed program";
+      if (status.includes("changed program") || status.includes("change program")) {
+        return false;
+      }
+      const batch = (s.batchDetails || "").trim().toLowerCase();
+      if (batch.includes("changed program") || batch.includes("change program")) {
+        return false;
+      }
+
+      if (selectedCentre !== "All") {
+        const studentCentre = (s.centreName || "").trim().toUpperCase();
+        if (studentCentre !== selectedCentre.trim().toUpperCase()) {
+          return false;
+        }
+      }
+
+      return true;
     });
+
+    const isChangedProgramVal = (val: string): boolean => {
+      const v = (val || "").trim().toLowerCase();
+      return v.includes("changed program") || v.includes("change program");
+    };
 
     // Unique row titles
     const rowSet = new Set<string>();
@@ -108,8 +141,8 @@ export function PivotTable({ students }: PivotTableProps) {
     validStudents.forEach(s => {
       const r = getFieldValue(s, rowDim);
       const c = getFieldValue(s, colDim);
-      if (r !== "Changed Program") rowSet.add(r);
-      if (c !== "Changed Program") colSet.add(c);
+      if (r && !isChangedProgramVal(r)) rowSet.add(r);
+      if (c && !isChangedProgramVal(c)) colSet.add(c);
     });
 
     const getBatchIndex = (name: string): number => {
@@ -237,8 +270,9 @@ export function PivotTable({ students }: PivotTableProps) {
       colCgpaSum,
       grandCgpaSum,
       grandCgpaCount,
+      totalStudentsCount: validStudents.length,
     };
-  }, [students, rowDim, colDim, metric]);
+  }, [students, rowDim, colDim, metric, selectedCentre]);
 
   const dimensionName = (val: string) => {
     return dimensionOptions.find(o => o.value === val)?.label || val;
@@ -252,11 +286,31 @@ export function PivotTable({ students }: PivotTableProps) {
             <Table className="h-5 w-5 text-blue-600" />
             Configurable Pivot Table
           </h3>
-          <p className="text-xs text-slate-400">Dynamically slice student facts by custom rows and columns</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Dynamically slice student facts by custom rows and columns ({pivotData.totalStudentsCount} records analyzed)
+          </p>
         </div>
 
         {/* Dynamic selectors */}
         <div className="flex flex-wrap items-center gap-3">
+          {/* Centre Name Filter */}
+          <div className="flex flex-col">
+            <label className="text-[10px] font-bold text-indigo-600 uppercase mb-1 flex items-center gap-1">
+              <MapPin className="h-3 w-3 text-indigo-500" />
+              Centre Name Filter
+            </label>
+            <select
+              value={selectedCentre}
+              onChange={(e) => setSelectedCentre(e.target.value)}
+              className="px-3 py-1.5 bg-indigo-50/70 border border-indigo-200 rounded-lg text-xs font-semibold text-indigo-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="All">All Centres ({centreOptions.length})</option>
+              {centreOptions.map(centre => (
+                <option key={centre} value={centre}>{centre}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex flex-col">
             <label className="text-[10px] font-bold text-slate-400 uppercase mb-1">Rows (Y-Axis)</label>
             <select

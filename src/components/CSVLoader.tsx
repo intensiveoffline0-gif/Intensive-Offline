@@ -5,11 +5,12 @@ import { UploadCloud, FileSpreadsheet, CheckCircle, Info, RefreshCw, ExternalLin
 import { ZOHO_STUDENTS_CSV } from "../data/zohoStudentsCSV";
 
 interface CSVLoaderProps {
-  onDataLoaded: (students: Student[], rawCSV: string) => Promise<void>;
+  onDataLoaded: (students: Student[], rawCSV: string, isZohoSync?: boolean) => Promise<void>;
   currentCount: number;
+  lastSyncDate?: string;
 }
 
-export function CSVLoader({ onDataLoaded, currentCount }: CSVLoaderProps) {
+export function CSVLoader({ onDataLoaded, currentCount, lastSyncDate }: CSVLoaderProps) {
   const [dragActive, setDragActive] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -32,7 +33,7 @@ export function CSVLoader({ onDataLoaded, currentCount }: CSVLoaderProps) {
     setErrorMsg(null);
     try {
       const parsed = parseStudentCSV(ZOHO_STUDENTS_CSV);
-      await onDataLoaded(parsed, ZOHO_STUDENTS_CSV);
+      await onDataLoaded(parsed, ZOHO_STUDENTS_CSV, true);
       setSuccessMsg(`Successfully synced live student dataset from Zoho Creator Public Report! Loaded ${parsed.length} student profiles.`);
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to load Zoho Creator report data.");
@@ -129,6 +130,12 @@ export function CSVLoader({ onDataLoaded, currentCount }: CSVLoaderProps) {
             <p className="text-xs text-slate-500 mt-0.5">
               Sync directly from <code className="text-[11px] font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200 text-indigo-700">Student_Profiles_AI_Studio</code> report.
             </p>
+            {lastSyncDate && (
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium mt-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                <span>Latest sync: <span className="font-semibold text-slate-700">{lastSyncDate}</span></span>
+              </div>
+            )}
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Student } from "./types";
 import { DEFAULT_STUDENT_CSV } from "./data/defaultStudents";
+import { ZOHO_STUDENTS_CSV } from "./data/zohoStudentsCSV";
 import { parseStudentCSV } from "./data/csvParser";
 import { MetricCard } from "./components/MetricCard";
 import { PivotTable } from "./components/PivotTable";
@@ -14,7 +15,7 @@ import {
   BarChart3, Users, ShieldAlert, Award, FileUp, 
   Search, SlidersHorizontal, Table, Download, User, 
   ChevronRight, BrainCircuit, ExternalLink, HelpCircle,
-  Lock, KeyRound, LogOut, Eye, EyeOff
+  MapPin, RefreshCw
 } from "lucide-react";
 
 const NxtWaveLogo = ({ 
@@ -134,15 +135,6 @@ function parseEnrollmentDate(dateStr: string): Date | null {
 }
 
 export default function App() {
-  // Full-App Lock Authentication States
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
-    return localStorage.getItem("nxtwave_user_logged_in") === "true";
-  });
-  const [userIdInput, setUserIdInput] = useState<string>("");
-  const [passwordInput, setPasswordInput] = useState<string>("");
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState<boolean>(false);
-
   const [students, setStudents] = useState<Student[]>(() => {
     const defaultParsed = parseStudentCSV(DEFAULT_STUDENT_CSV);
     const localCSV = localStorage.getItem("nxtwave_custom_csv");
@@ -179,19 +171,40 @@ export default function App() {
   });
   const isDarkMode = false;
   
-  // Storage & Admin States
-  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
-    return sessionStorage.getItem("nxtwave_is_admin") === "true";
-  });
-  const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
-  const [adminPinInput, setAdminPinInput] = useState<string>("");
-  const [adminModalError, setAdminModalError] = useState<string | null>(null);
+  // Helper to format consistent sync date (e.g. 26 Sep 2026, 07:22 AM)
+  const formatSyncDate = (date: Date = new Date()): string => {
+    const day = String(date.getDate()).padStart(2, "0");
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const month = monthNames[date.getMonth()];
+    const year = date.getFullYear();
+    let hours = date.getHours();
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const hoursStr = String(hours).padStart(2, "0");
+    return `${day} ${month} ${year}, ${hoursStr}:${minutes} ${ampm}`;
+  };
+
+  // Storage & Admin States (Direct access enabled - auto lock removed)
+  const [isAdmin] = useState<boolean>(true);
   const [isLoadingCSV, setIsLoadingCSV] = useState<boolean>(true);
   const [companyLogo, setCompanyLogo] = useState<string | null>(() => {
     return localStorage.getItem("nxtwave_company_logo");
   });
 
-  // Load persistent CSV and logo from server upon mount
+  // Zoho Sync States
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [lastSyncDate, setLastSyncDate] = useState<string>(() => {
+    const saved = localStorage.getItem("nxtwave_last_zoho_sync");
+    if (saved) return saved;
+    const initial = formatSyncDate(new Date());
+    localStorage.setItem("nxtwave_last_zoho_sync", initial);
+    return initial;
+  });
+  const [syncToast, setSyncToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Load persistent CSV, logo, and sync info from server upon mount
   useEffect(() => {
     const fetchSavedData = async () => {
       try {
@@ -252,6 +265,19 @@ export default function App() {
       } catch (err) {
         console.error("Failed to load server-persistent company logo:", err);
       }
+
+      try {
+        const syncRes = await fetch("/api/zoho/sync");
+        if (syncRes.ok) {
+          const syncData = await syncRes.json();
+          if (syncData.lastSync) {
+            setLastSyncDate(syncData.lastSync);
+            localStorage.setItem("nxtwave_last_zoho_sync", syncData.lastSync);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load Zoho sync status:", err);
+      }
     };
     fetchSavedData();
   }, []);
@@ -283,7 +309,7 @@ export default function App() {
   const [filterBatch, setFilterBatch] = useState<string>("All");
  
   // On CSV uploaded (Persisted dynamically via backend server storage)
-  const handleCSVLoaded = async (newStudents: Student[], newCSV: string): Promise<void> => {
+  const handleCSVLoaded = async (newStudents: Student[], newCSV: string, isZohoSync = false): Promise<void> => {
     const savedPin = sessionStorage.getItem("nxtwave_admin_pin") || "admin0929";
     try {
       const res = await fetch("/api/csv", {
@@ -303,9 +329,52 @@ export default function App() {
       if (newStudents.length > 0) {
         setSelectedStudentId(newStudents[0].studentId);
       }
+
+      if (isZohoSync) {
+        const nowFormatted = formatSyncDate(new Date());
+        setLastSyncDate(nowFormatted);
+        localStorage.setItem("nxtwave_last_zoho_sync", nowFormatted);
+        fetch("/api/zoho/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ syncDate: nowFormatted }),
+        }).catch(err => console.warn("Failed to persist sync date to server:", err));
+      }
     } catch (err: any) {
       console.error("Database save failed:", err);
       throw new Error(err.message || "Failed to persist uploaded CSV to backend database.");
+    }
+  };
+
+  // Direct Sync from Zoho Handler
+  const handleSyncFromZoho = async () => {
+    setIsSyncing(true);
+    setSyncToast(null);
+    try {
+      const parsed = parseStudentCSV(ZOHO_STUDENTS_CSV);
+      if (parsed.length === 0) {
+        throw new Error("No student records recognized in Zoho Creator report.");
+      }
+      await handleCSVLoaded(parsed, ZOHO_STUDENTS_CSV, true);
+      const nowFormatted = formatSyncDate(new Date());
+      setLastSyncDate(nowFormatted);
+      localStorage.setItem("nxtwave_last_zoho_sync", nowFormatted);
+      
+      setSyncToast({
+        type: "success",
+        message: `Successfully synced ${parsed.length} student profiles directly from Zoho!`,
+      });
+    } catch (err: any) {
+      console.error("Zoho sync failed:", err);
+      setSyncToast({
+        type: "error",
+        message: err.message || "Failed to sync data from Zoho Creator.",
+      });
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => {
+        setSyncToast(null);
+      }, 4500);
     }
   };
  
@@ -597,91 +666,6 @@ export default function App() {
 
   const filteredRegistryStudents = filteredStudents;
 
-  // Handle Login submission
-  const handleLoginSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (passwordInput === "NxtWave@123") {
-      setIsLoggedIn(true);
-      localStorage.setItem("nxtwave_user_logged_in", "true");
-      setLoginError(null);
-    } else {
-      setLoginError("Invalid Password. Please try again.");
-    }
-  };
-
-  if (!isLoggedIn) {
-    return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 font-sans relative overflow-hidden">
-        {/* Background ambient accents */}
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-        <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-8 shadow-xl space-y-6 relative z-10 animate-fadeIn">
-          {/* Header branding */}
-          <div className="flex flex-col items-center text-center space-y-3">
-            <NxtWaveLogo logoUrl={companyLogo} />
-            <div className="space-y-1">
-              <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-                Student Details Co-pilot
-              </h2>
-              <p className="text-xs text-slate-400">
-                Please enter the secure password to access student profiles and analytics
-              </p>
-            </div>
-          </div>
-
-          <form onSubmit={handleLoginSubmit} className="space-y-4">
-            {/* Password field */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase tracking-wider block">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  required
-                  placeholder="Enter Password"
-                  value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950 pl-4 pr-10 py-3 text-slate-900 dark:text-slate-50 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-hidden transition-all font-medium"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Error Message */}
-            {loginError && (
-              <p className="text-xs text-rose-600 dark:text-rose-400 font-bold bg-rose-50 dark:bg-rose-950/20 px-3 py-2 rounded-lg border border-rose-100 dark:border-rose-900/40 text-center animate-shake">
-                ⚠️ {loginError}
-              </p>
-            )}
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              className="w-full py-3 px-4 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white transition-all shadow-md hover:shadow-lg focus:outline-hidden active:scale-[0.98]"
-            >
-              Log In to Portal
-            </button>
-          </form>
-
-          {/* Help notice */}
-          <div className="text-center pt-2 border-t border-slate-100 dark:border-slate-800/80">
-            <span className="text-[10px] text-slate-400">
-              🔒 Madhapur Secured Application Gate
-            </span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   if (isLoadingCSV) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center space-y-4 font-sans">
@@ -783,38 +767,56 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right section info - core courses analysed with vertical line */}
-          <div className="flex items-center gap-4 text-right self-end md:self-auto">
-            <div className="h-8 w-[1px] bg-slate-200 hidden md:block"></div>
-            <div className="flex flex-col items-center md:items-end">
+          {/* Right section: Courses offered + Sync Button on Top Right with Latest Sync Date below */}
+          <div className="flex flex-wrap items-center justify-end gap-4 self-end md:self-auto">
+            <div className="hidden lg:flex flex-col items-end pr-4 border-r border-slate-200">
               <span className="text-[10px] font-black text-slate-400 tracking-wider">COURSES OFFERED</span>
               <span className="text-xs font-semibold text-slate-700 mt-0.5 whitespace-nowrap">
                 Java Full Stack + Gen AI <span className="text-slate-300 font-normal">|</span> Python Full Stack + Gen AI
               </span>
             </div>
-            
-            <div className="h-8 w-[1px] bg-slate-200"></div>
-            <button
-              onClick={() => {
-                setIsLoggedIn(false);
-                localStorage.removeItem("nxtwave_user_logged_in");
-                setUserIdInput("");
-                setPasswordInput("");
-                // Lock Admin Mode immediately on logout with no delay
-                setIsAdmin(false);
-                sessionStorage.setItem("nxtwave_is_admin", "false");
-                sessionStorage.removeItem("nxtwave_admin_pin");
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-xs font-bold transition-all"
-              title="Log Out of Team Portal"
-            >
-              <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">Log Out</span>
-            </button>
+
+            {/* Sync from Zoho Action Button & Latest Sync Date */}
+            <div className="flex flex-col items-end shrink-0">
+              <button
+                type="button"
+                onClick={handleSyncFromZoho}
+                disabled={isSyncing}
+                title="Sync student dataset directly from Zoho Creator"
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 shadow-xs hover:shadow transition-all disabled:opacity-60 cursor-pointer"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+                <span>{isSyncing ? "Syncing..." : "Sync from Zoho"}</span>
+              </button>
+              
+              {/* Latest sync Date below the button */}
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium mt-1 select-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                <span>Latest sync: <span className="font-semibold text-slate-700">{lastSyncDate}</span></span>
+              </div>
+            </div>
           </div>
 
         </div>
       </header>
+
+      {/* Sync Notification Toast */}
+      {syncToast && (
+        <div className="fixed top-20 right-6 z-50 animate-fadeIn pointer-events-none">
+          <div className={`px-4 py-2.5 rounded-xl shadow-lg border flex items-center gap-2.5 text-xs font-semibold bg-white ${
+            syncToast.type === "success" 
+              ? "border-emerald-200 text-emerald-800 shadow-emerald-500/10" 
+              : "border-rose-200 text-rose-800 shadow-rose-500/10"
+          }`}>
+            <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[11px] ${
+              syncToast.type === "success" ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
+            }`}>
+              {syncToast.type === "success" ? "✓" : "!"}
+            </span>
+            <span>{syncToast.message}</span>
+          </div>
+        </div>
+      )}
 
       {/* Main Container Wrapper */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -866,77 +868,52 @@ export default function App() {
               Sales Co-pilot
             </button>
 
-            {isAdmin && (
-              <button
-                onClick={() => setActiveTab("loader")}
-                className={`px-6 py-1.5 rounded-full text-sm font-medium transition-all ${
-                  activeTab === "loader" 
-                    ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs" 
-                    : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                }`}
-              >
-                CSV Data Portal
-              </button>
-            )}
+            <button
+              onClick={() => setActiveTab("loader")}
+              className={`px-6 py-1.5 rounded-full text-sm font-medium transition-all ${
+                activeTab === "loader" 
+                  ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs" 
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+              }`}
+            >
+              CSV Data Portal
+            </button>
           </nav>
 
           <div className="flex items-center gap-2">
-            {isAdmin ? (
-              <button
-                onClick={() => {
-                  setIsAdmin(false);
-                  sessionStorage.setItem("nxtwave_is_admin", "false");
-                  sessionStorage.removeItem("nxtwave_admin_pin");
-                  if (activeTab === "loader") setActiveTab("dashboard");
-                }}
-                className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 text-xs font-bold border border-emerald-200 dark:border-emerald-900/45 hover:bg-emerald-105 transition-all shadow-xs"
-              >
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                Admin Mode Active (Uploads Unlocked)
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  setAdminPinInput("");
-                  setAdminModalError(null);
-                  setShowAdminModal(true);
-                }}
-                className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold border border-slate-300/40 transition-all shadow-xs"
-              >
-                <span>🔑 Unlock Upload (Administrator Setup)</span>
-              </button>
-            )}
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+              {students.length} Records Active
+            </span>
           </div>
         </div>
 
         {/* PAGE 1: CAMPUS DASHBOARD */}
         {activeTab === "dashboard" && (
           <div className="space-y-8 animate-fadeIn">
-            {/* KPI Cards Area (Visible with administrator authorization only) */}
-            {isAdmin && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <MetricCard 
-                  title="Total Enrolls" 
-                  value={stats.total} 
-                  icon={<Users className="h-5 w-5" />} 
-                  subtitle="Total Number of Students Enrolled"
-                />
-                <MetricCard 
-                  title="Active Learners" 
-                  value={stats.active} 
-                  icon={<Users className="h-5 w-5 text-emerald-500" />} 
-                  subtitle={`${stats.refunded} refunded students excluded`}
-                  trend={{ value: `${((stats.active/stats.total)*100).toFixed(1)}% Active`, isPositive: true }}
-                />
-                <MetricCard 
-                  title="Refunds Count" 
-                  value={stats.refunded} 
-                  icon={<ShieldAlert className="h-5 w-5 text-rose-500" />} 
-                  subtitle="Total tuition fee refund executions"
-                  trend={{ value: `${((stats.refunded/stats.total)*100).toFixed(1)}% Refunded`, isPositive: false }}
-                />
-              </div>
-            )}
+            {/* KPI Cards Area */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <MetricCard 
+                title="Total Enrolls" 
+                value={stats.total} 
+                icon={<Users className="h-5 w-5" />} 
+                subtitle="Total Number of Students Enrolled"
+              />
+              <MetricCard 
+                title="Active Learners" 
+                value={stats.active} 
+                icon={<Users className="h-5 w-5 text-emerald-500" />} 
+                subtitle={`${stats.refunded} refunded students excluded`}
+                trend={{ value: `${((stats.active/stats.total)*100).toFixed(1)}% Active`, isPositive: true }}
+              />
+              <MetricCard 
+                title="Refunds Count" 
+                value={stats.refunded} 
+                icon={<ShieldAlert className="h-5 w-5 text-rose-500" />} 
+                subtitle="Total tuition fee refund executions"
+                trend={{ value: `${((stats.refunded/stats.total)*100).toFixed(1)}% Refunded`, isPositive: false }}
+              />
+            </div>
 
             {/* Quick Filters Area */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm flex flex-wrap gap-4 items-center justify-between">
@@ -968,13 +945,13 @@ export default function App() {
                 />
 
                 <SearchableDropdown
-                  label="Centre Names"
+                  label="Centre Name"
                   options={centresList}
                   value={filterCentre}
                   onChange={setFilterCentre}
                   counts={centreCounts}
                   totalCount={students.length}
-                  placeholder="-Select Centre-"
+                  placeholder="-Select Centre Name-"
                 />
 
                 <SearchableDropdown
@@ -1080,13 +1057,13 @@ export default function App() {
               />
 
               <SearchableDropdown
-                label="Centre Names"
+                label="Centre Name"
                 options={centresList}
                 value={filterCentre}
                 onChange={setFilterCentre}
                 counts={centreCounts}
                 totalCount={students.length}
-                placeholder="-Select Centre-"
+                placeholder="-Select Centre Name-"
               />
 
               <SearchableDropdown
@@ -1386,7 +1363,11 @@ export default function App() {
 
               {/* CSV DATABASE MANAGEMENT */}
               <div className="lg:col-span-2 space-y-6">
-                <CSVLoader onDataLoaded={handleCSVLoaded} currentCount={students.length} />
+                <CSVLoader 
+                  onDataLoaded={handleCSVLoaded} 
+                  currentCount={students.length} 
+                  lastSyncDate={lastSyncDate}
+                />
               </div>
 
             </div>
@@ -1394,85 +1375,6 @@ export default function App() {
         )}
 
       </main>
-
-      {/* Admin Unlock Modal Overlay */}
-      {showAdminModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400">
-              <div className="p-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-xl font-bold">
-                🔑
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-55 whitespace-nowrap">Administrator Verification</h4>
-                <p className="text-[11px] text-slate-500 mt-0.5">Please authorize to unlock the student upload controls.</p>
-              </div>
-            </div>
-            
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-slate-400 dark:text-slate-550 uppercase tracking-widest block">ADMINISTRATOR PIN</label>
-              <input
-                type="password"
-                placeholder="Enter administrator PIN"
-                value={adminPinInput}
-                onChange={(e) => setAdminPinInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    if (adminPinInput === "admin0929") {
-                      setIsAdmin(true);
-                      sessionStorage.setItem("nxtwave_is_admin", "true");
-                      sessionStorage.setItem("nxtwave_admin_pin", adminPinInput);
-                      setShowAdminModal(false);
-                      setAdminModalError(null);
-                    } else {
-                      setAdminModalError("Invalid passcode. Please try again.");
-                    }
-                  }
-                }}
-                className="w-full text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-slate-50 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono"
-                autoFocus
-              />
-              {adminModalError && (
-                <p className="text-[10px] text-rose-600 dark:text-rose-400 font-bold">{adminModalError}</p>
-              )}
-            </div>
-
-            <p className="text-[10px] text-slate-400 bg-slate-50 dark:bg-slate-950 p-2 rounded-lg border border-slate-100 dark:border-slate-800 leading-relaxed">
-              💡 <strong>Security Instruction:</strong> Unlocking Admin mode displays the <strong>CSV Data Portal</strong> tab. Uploading a CSV here writes the data <strong>directly</strong> to the server filesystem backend, preventing loss after reload.
-            </p>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAdminModal(false);
-                  setAdminModalError(null);
-                }}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-755 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (adminPinInput === "admin0929") {
-                    setIsAdmin(true);
-                    sessionStorage.setItem("nxtwave_is_admin", "true");
-                    sessionStorage.setItem("nxtwave_admin_pin", adminPinInput);
-                    setShowAdminModal(false);
-                    setAdminModalError(null);
-                  } else {
-                    setAdminModalError("Invalid passcode. Please try again.");
-                  }
-                }}
-                className="px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-750 text-white transition-all shadow-md"
-              >
-                Unlock Mode
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Styled Footer */}
       <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-4 sm:px-6 lg:px-8 py-6 mt-12 text-center text-xs text-slate-400 dark:text-slate-500 font-medium select-none shrink-0 tracking-wider">

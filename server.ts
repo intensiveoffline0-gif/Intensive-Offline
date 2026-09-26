@@ -89,6 +89,37 @@ async function generateContentWithRetry(
 
 const CSV_FILE_PATH = path.join(process.cwd(), "custom_students.csv");
 const LOGO_FILE_PATH = path.join(process.cwd(), "custom_logo.txt");
+const SYNC_INFO_FILE_PATH = path.join(process.cwd(), "zoho_sync_info.json");
+
+// GET endpoint to fetch latest Zoho sync timestamp
+app.get("/api/zoho/sync", async (req, res) => {
+  try {
+    if (fs.existsSync(SYNC_INFO_FILE_PATH)) {
+      const data = await fs.promises.readFile(SYNC_INFO_FILE_PATH, "utf8");
+      return res.json(JSON.parse(data));
+    }
+    return res.json({ lastSync: null });
+  } catch (error: any) {
+    return res.json({ lastSync: null });
+  }
+});
+
+// POST endpoint to update latest Zoho sync timestamp
+app.post("/api/zoho/sync", async (req, res) => {
+  try {
+    const { syncDate } = req.body || {};
+    const info = {
+      lastSync: syncDate || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      source: "Zoho Creator Live Report"
+    };
+    await fs.promises.writeFile(SYNC_INFO_FILE_PATH, JSON.stringify(info, null, 2), "utf8");
+    return res.json({ success: true, ...info });
+  } catch (error: any) {
+    console.error("Error saving Zoho sync info:", error);
+    return res.status(500).json({ error: "Failed to persist Zoho sync date" });
+  }
+});
 
 // GET endpoint to fetch persisted logo if it exists
 app.get("/api/logo", async (req, res) => {
