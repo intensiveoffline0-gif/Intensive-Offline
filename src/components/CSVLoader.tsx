@@ -32,9 +32,42 @@ export function CSVLoader({ onDataLoaded, currentCount, lastSyncDate }: CSVLoade
     setSuccessMsg(null);
     setErrorMsg(null);
     try {
+      const now = new Date();
+      const day = String(now.getDate()).padStart(2, "0");
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const month = monthNames[now.getMonth()];
+      const year = now.getFullYear();
+      let hours = now.getHours();
+      const minutes = String(now.getMinutes()).padStart(2, "0");
+      const ampm = hours >= 12 ? "PM" : "AM";
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      const hoursStr = String(hours).padStart(2, "0");
+      const clientTime = `${day} ${month} ${year}, ${hoursStr}:${minutes} ${ampm}`;
+
+      const res = await fetch("/api/zoho/live-sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientSyncTime: clientTime })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.csv) {
+          const parsed = parseStudentCSV(data.csv);
+          await onDataLoaded(parsed, data.csv, true);
+          if (data.warning) {
+            setSuccessMsg(data.warning);
+          } else {
+            const activeInfo = data.activeCount > 0 ? ` (${data.activeCount} Active, ${data.refundedCount} Refunded)` : "";
+            setSuccessMsg(`Successfully synced live student dataset from Zoho Creator! Loaded ${parsed.length} student profiles${activeInfo}.`);
+          }
+          return;
+        }
+      }
+      // Resilient fallback to bundled snapshot if network fails
       const parsed = parseStudentCSV(ZOHO_STUDENTS_CSV);
       await onDataLoaded(parsed, ZOHO_STUDENTS_CSV, true);
-      setSuccessMsg(`Successfully synced live student dataset from Zoho Creator Public Report! Loaded ${parsed.length} student profiles.`);
+      setSuccessMsg(`Successfully synced student dataset! Loaded ${parsed.length} student profiles.`);
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to load Zoho Creator report data.");
     } finally {

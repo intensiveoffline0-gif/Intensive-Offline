@@ -76,6 +76,78 @@ export function parseCSVLine(line: string): string[] {
 
 const normalizeHeader = (h: string) => h.toLowerCase().trim().replace(/['"“”]/g, "").replace(/\s+/g, " ");
 
+function normalizeName(name: string): string {
+  return (name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeMobile(mobile: string): string {
+  const digits = (mobile || "").replace(/[^0-9]/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : "";
+}
+
+function normalizeEmail(email: string): string {
+  const e = (email || "").toLowerCase().trim();
+  return e.includes("@") ? e : "";
+}
+
+function namesMatch(a: string, b: string): boolean {
+  const normA = normalizeName(a);
+  const normB = normalizeName(b);
+  if (!normA || !normB) return false;
+  if (normA === normB) return true;
+  if (normA.includes(normB) || normB.includes(normA)) return true;
+  return false;
+}
+
+export function deduplicateStudents(studentList: Student[]): Student[] {
+  const deduped: Student[] = [];
+
+  for (const s of studentList) {
+    const sId = (s.studentId || "").trim().toLowerCase();
+    const sEmail = normalizeEmail(s.personalMailId);
+    const sMobile = normalizeMobile(s.mobileNumber);
+    const sName = s.fullName || "";
+
+    const existingIdx = deduped.findIndex(d => {
+      const dId = (d.studentId || "").trim().toLowerCase();
+      const dEmail = normalizeEmail(d.personalMailId);
+      const dMobile = normalizeMobile(d.mobileNumber);
+      const dName = d.fullName || "";
+
+      // 1. Exact Student ID match
+      if (sId && dId && sId === dId) return true;
+      // 2. Email match AND Names match
+      if (sEmail && dEmail && sEmail === dEmail && namesMatch(sName, dName)) return true;
+      // 3. Mobile match AND Names match
+      if (sMobile && dMobile && sMobile === dMobile && namesMatch(sName, dName)) return true;
+      return false;
+    });
+
+    if (existingIdx === -1) {
+      deduped.push({ ...s });
+    } else {
+      const existing = deduped[existingIdx];
+      // Check if candidate s has the newer permanent roll number (e.g. I26K over I26A)
+      const sIsK = (s.studentId || "").toUpperCase().includes("K");
+      const existingIsK = (existing.studentId || "").toUpperCase().includes("K");
+
+      if (sIsK && !existingIsK) {
+        existing.studentId = s.studentId;
+        existing.userId = s.userId || s.studentId;
+      }
+
+      // Merge non-empty values
+      (Object.keys(s) as (keyof Student)[]).forEach(k => {
+        if (s[k] && (!existing[k] || (sIsK && !existingIsK))) {
+          (existing as any)[k] = s[k];
+        }
+      });
+    }
+  }
+
+  return deduped;
+}
+
 export function parseStudentCSV(csvText: string): Student[] {
   if (!csvText) return [];
   const rows = parseCSVRows(csvText);
@@ -135,12 +207,15 @@ export function parseStudentCSV(csvText: string): Student[] {
     students.push(s);
   }
 
+  // Deduplicate students (merges old temporary roll numbers into permanent ones)
+  const deduped = deduplicateStudents(students);
+
   // Sort students by studentId in ascending order
-  students.sort((a, b) => {
+  deduped.sort((a, b) => {
     const idA = a.studentId || "";
     const idB = b.studentId || "";
     return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: "base" });
   });
 
-  return students;
+  return deduped;
 }

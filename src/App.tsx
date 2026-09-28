@@ -346,35 +346,83 @@ export default function App() {
     }
   };
 
-  // Direct Sync from Zoho Handler
+  // Direct Sync from Zoho Handler (Pulls real-time live data directly from Zoho Creator)
   const handleSyncFromZoho = async () => {
     setIsSyncing(true);
     setSyncToast(null);
     try {
-      const parsed = parseStudentCSV(ZOHO_STUDENTS_CSV);
+      const clientTime = formatSyncDate(new Date());
+      const res = await fetch("/api/zoho/live-sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientSyncTime: clientTime })
+      });
+
+      let newCSV = "";
+      let totalCount = 0;
+      let activeCount = 0;
+      let refundedCount = 0;
+      let updatedCount = 0;
+      let newCount = 0;
+      let syncDateStr = clientTime;
+      let warningMsg = "";
+
+      if (res.ok) {
+        const data = await res.json();
+        newCSV = data.csv;
+        totalCount = data.count || 0;
+        activeCount = data.activeCount || 0;
+        refundedCount = data.refundedCount || 0;
+        updatedCount = data.updatedCount || 0;
+        newCount = data.newCount || 0;
+        if (data.lastSync) syncDateStr = data.lastSync;
+        if (data.warning) warningMsg = data.warning;
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || "Zoho server live sync failed.");
+      }
+
+      if (!newCSV) {
+        throw new Error("Received empty dataset from Zoho sync.");
+      }
+
+      const parsed = parseStudentCSV(newCSV);
       if (parsed.length === 0) {
         throw new Error("No student records recognized in Zoho Creator report.");
       }
-      await handleCSVLoaded(parsed, ZOHO_STUDENTS_CSV, true);
-      const nowFormatted = formatSyncDate(new Date());
-      setLastSyncDate(nowFormatted);
-      localStorage.setItem("nxtwave_last_zoho_sync", nowFormatted);
+
+      setStudents(parsed);
+      setRawCSV(newCSV);
+      localStorage.setItem("nxtwave_custom_csv", newCSV);
+      setLastSyncDate(syncDateStr);
+      localStorage.setItem("nxtwave_last_zoho_sync", syncDateStr);
+      if (parsed.length > 0 && (!selectedStudentId || !parsed.some(s => s.studentId === selectedStudentId))) {
+        setSelectedStudentId(parsed[0].studentId);
+      }
       
-      setSyncToast({
-        type: "success",
-        message: `Successfully synced ${parsed.length} student profiles directly from Zoho!`,
-      });
+      if (warningMsg) {
+        setSyncToast({
+          type: "info",
+          message: warningMsg,
+        });
+      } else {
+        const activeInfo = activeCount > 0 ? ` (${activeCount} Active, ${refundedCount} Refunded)` : "";
+        setSyncToast({
+          type: "success",
+          message: `Synced with Zoho Creator! ${parsed.length} profiles loaded${activeInfo}.`,
+        });
+      }
     } catch (err: any) {
-      console.error("Zoho sync failed:", err);
+      console.error("Zoho live sync failed:", err);
       setSyncToast({
         type: "error",
-        message: err.message || "Failed to sync data from Zoho Creator.",
+        message: err.message || "Failed to sync latest values from Zoho Creator.",
       });
     } finally {
       setIsSyncing(false);
       setTimeout(() => {
         setSyncToast(null);
-      }, 4500);
+      }, 5000);
     }
   };
  

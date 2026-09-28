@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
+import { ZOHO_STUDENTS_CSV } from "./src/data/zohoStudentsCSV.ts";
 
 dotenv.config();
 
@@ -91,7 +92,500 @@ const CSV_FILE_PATH = path.join(process.cwd(), "custom_students.csv");
 const LOGO_FILE_PATH = path.join(process.cwd(), "custom_logo.txt");
 const SYNC_INFO_FILE_PATH = path.join(process.cwd(), "zoho_sync_info.json");
 
-// GET endpoint to fetch latest Zoho sync timestamp
+const ZOHO_REPORT_PERMA_URL = "https://creatorapp.zohopublic.in/nxtwave/intensive-offline/report-perma/Student_Profiles_AI_Studio/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0";
+
+const CANONICAL_CSV_HEADERS = [
+  "Full Name",
+  "User ID",
+  "Student ID",
+  "Mobile Number",
+  "Active Status",
+  "Enrolled on",
+  "Batch Details",
+  "Batch Timing",
+  "Gender",
+  "Preferred Job Track",
+  "Your Personal Mail ID",
+  "Permanent Address District",
+  "Permanent State",
+  "Permanent Address Pincode",
+  "Highest Qualification",
+  "Graduation Degree Name",
+  "Graduation Stream",
+  "Graduation College / University Name",
+  "Graduation Year of Passing",
+  "Graduation CGPA ",
+  "Post-Graduation Degree Name",
+  "Post-Graduation Stream",
+  "Post-Graduation College / University Name",
+  "Post Graduation Year of Passing",
+  "Post Graduation CGPA / Percentage Obtained",
+  "Placed Organisation",
+  "External Placed Organisation",
+  "Placement Type",
+  "Placed Month",
+  "CTC(LPA)",
+  "Profile Photo",
+  "Resume",
+  "Instructor Name",
+  "Centre Name"
+];
+
+function cleanZohoText(val: any): string {
+  if (!val) return "";
+  let s = String(val).trim();
+  const mailMatch = s.match(/href='mailto:([^']+)'/i) || s.match(/mailto:([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
+  if (mailMatch) return mailMatch[1].trim();
+
+  const telMatch = s.match(/href='tel:([^']+)'/i) || s.match(/tel:([^'"]+)/i);
+  if (telMatch) return telMatch[1].replace(/[^0-9+]/g, "").trim();
+
+  return s.replace(/<[^>]*>/g, "").trim();
+}
+
+function extractZohoPhotoUrl(rawPhoto: any): string {
+  if (!rawPhoto) return "";
+  const s = String(rawPhoto);
+  const m = s.match(/downqual=["']([^"']+)["']/i) || s.match(/src=["']([^"']+)["']/i);
+  if (m) {
+    let url = m[1].replace(/&amp;/g, "&");
+    if (url.startsWith("/")) {
+      url = "https://creatorapp.zohopublic.in" + url;
+    }
+    return url;
+  }
+  return "";
+}
+
+function extractZohoResumeUrl(rawResume: any): string {
+  if (!rawResume) return "";
+  const s = String(rawResume);
+  const m = s.match(/href=["']([^"']+)["']/i);
+  if (m) {
+    let url = m[1].replace(/&amp;/g, "&");
+    if (url.startsWith("/")) {
+      url = "https://creatorapp.zohopublic.in" + url;
+    }
+    return url;
+  }
+  return "";
+}
+
+function extractZohoStudentId(idStudentName: any, zohoRecId: any): string {
+  if (!idStudentName) return String(zohoRecId || "").trim();
+  const s = String(idStudentName).trim();
+  const dashIdx = s.indexOf("-");
+  if (dashIdx !== -1) {
+    return s.substring(0, dashIdx).trim();
+  }
+  return s.split(" ")[0].trim();
+}
+
+function parseServerCSVRows(csvText: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = "";
+  let inQuotes = false;
+  
+  for (let i = 0; i < csvText.length; i++) {
+    const char = csvText[i];
+    const nextChar = csvText[i + 1];
+    
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentField += '"';
+        i++; // skip next quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentField);
+      currentField = "";
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') {
+        i++; // skip \n
+      }
+      currentRow.push(currentField);
+      if (currentRow.length > 0) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentField = "";
+    } else {
+      currentField += char;
+    }
+  }
+  
+  if (currentField !== "" || currentRow.length > 0) {
+    currentRow.push(currentField);
+    rows.push(currentRow);
+  }
+  
+  return rows.map(row => row.map(v => {
+    let s = v.trim();
+    if (s.startsWith('"') && s.endsWith('"')) {
+      s = s.substring(1, s.length - 1);
+    }
+    return s.trim();
+  }));
+}
+
+function mapZohoRecordToRow(r: any): Record<string, string> {
+  const studentId = extractZohoStudentId(r.ID_Student_Name, r.zohoRecId || r.ID);
+  const fullName = r.Your_Full_Name || (r.ID_Student_Name ? r.ID_Student_Name.replace(/^[^-]+-\s*/, "").trim() : "");
+  const email = r.zc_Your_Personal_Mail_ID_unformatted || cleanZohoText(r.Your_Personal_Mail_ID);
+  const mobile = r.zc_Register_Mobile_Number_unformatted || cleanZohoText(r.Register_Mobile_Number);
+  const photo = extractZohoPhotoUrl(r.Profile_Photo);
+  const resume = extractZohoResumeUrl(r.Your_Resume);
+
+  return {
+    "Full Name": fullName,
+    "User ID": r.Instructor_Name || studentId,
+    "Student ID": studentId,
+    "Mobile Number": mobile,
+    "Active Status": r.Active_Status || "Active",
+    "Enrolled on": r.Orientation_Day || "",
+    "Batch Details": r.Batch_Details || "",
+    "Batch Timing": r.Batch_Timing || "9:00 AM - 1:00 PM",
+    "Gender": r.Gender || "",
+    "Preferred Job Track": r.Preferred_Job_Track || r.Graduation_Stream_new || "",
+    "Your Personal Mail ID": email,
+    "Permanent Address District": r.Permanent_Address_District || "",
+    "Permanent State": r.Permanent_State || "",
+    "Permanent Address Pincode": r.Permanent_Address_Pincode || "",
+    "Highest Qualification": r.Highest_Qualification || r.Graduation_Degree_Name || "",
+    "Graduation Degree Name": r.Graduation_Degree_Name || "",
+    "Graduation Stream": r.Graduation_Stream_new || "",
+    "Graduation College / University Name": r.Graduation_College_University_Name1 || "",
+    "Graduation Year of Passing": r.Graduation_Year_of_Passing || "",
+    "Graduation CGPA ": r.Graduation_CGPA_Percentage_Obtained || "",
+    "Post-Graduation Degree Name": r.Post_Graduation_Degree_Name || "",
+    "Post-Graduation Stream": r.Post_Graduation_Stream || "",
+    "Post-Graduation College / University Name": r.Post_Graduation_College_University_Name || "",
+    "Post Graduation Year of Passing": r.Post_Graduation_Year_of_Passing || "",
+    "Post Graduation CGPA / Percentage Obtained": r.Post_Graduation_CGPA_Percentage_Obtained || "",
+    "Placed Organisation": r.Placed_Organisation || "",
+    "External Placed Organisation": r.External_Placed_Organisation || "",
+    "Placement Type": r.Placed_Through || "",
+    "Placed Month": r.Placed_Month || "",
+    "CTC(LPA)": r.CTC_LPA || r["CTC(LPA)"] || "",
+    "Profile Photo": photo,
+    "Resume": resume,
+    "Instructor Name": r.Instructor_Name || "",
+    "Centre Name": r.Centre_Name || ""
+  };
+}
+
+function normalizeName(name: string): string {
+  return (name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeMobile(mobile: string): string {
+  const digits = (mobile || "").replace(/[^0-9]/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : "";
+}
+
+function normalizeEmail(email: string): string {
+  const e = (email || "").toLowerCase().trim();
+  return e.includes("@") ? e : "";
+}
+
+function namesMatch(a: string, b: string): boolean {
+  const normA = normalizeName(a);
+  const normB = normalizeName(b);
+  if (!normA || !normB) return false;
+  if (normA === normB) return true;
+  if (normA.includes(normB) || normB.includes(normA)) return true;
+  return false;
+}
+
+function formatCurrentSyncDate(d = new Date()): string {
+  const day = String(d.getDate()).padStart(2, "0");
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const month = monthNames[d.getMonth()];
+  const year = d.getFullYear();
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  const hoursStr = String(hours).padStart(2, "0");
+  return `${day} ${month} ${year}, ${hoursStr}:${minutes} ${ampm}`;
+}
+
+const ZOHO_DIRECT_CSV_URL = "https://creatorapp.zohopublic.in/nxtwave/intensive-offline/csv/Student_Profiles_AI_Studio/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0";
+
+// Fetch live CSV directly from Zoho Creator with cache-busting and connection resets handled
+async function fetchLiveZohoCsv(): Promise<string> {
+  let lastError: any = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`[Zoho Sync] Requesting direct live CSV from Zoho Creator (attempt ${attempt}/3)...`);
+      const fetchUrl = `${ZOHO_DIRECT_CSV_URL}?_t=${Date.now()}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+      const res = await fetch(fetchUrl, {
+        signal: controller.signal,
+        headers: {
+          "Connection": "close",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "text/csv,text/plain,*/*"
+        }
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        throw new Error(`Zoho Creator responded with HTTP ${res.status}`);
+      }
+
+      const csvText = await res.text();
+      if (!csvText || csvText.length < 500) {
+        throw new Error("Zoho Creator returned an empty or invalid CSV response");
+      }
+
+      return csvText;
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[Zoho Sync] Attempt ${attempt} failed:`, err?.message || err);
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, 1000 * attempt));
+      }
+    }
+  }
+  throw lastError || new Error("Failed to fetch live CSV from Zoho Creator");
+}
+
+// Live Zoho Sync Engine: pulls all live records directly from Zoho Creator and merges with database
+async function syncWithZohoLive(clientSyncTime?: string): Promise<{
+  success: boolean;
+  count: number;
+  activeCount: number;
+  refundedCount: number;
+  newCount: number;
+  updatedCount: number;
+  lastSync: string;
+  latestStudent: string;
+  csv: string;
+  warning?: string;
+}> {
+  let liveCsvText = "";
+  let fetchWarning = "";
+
+  try {
+    liveCsvText = await fetchLiveZohoCsv();
+  } catch (err: any) {
+    console.warn("[Zoho Sync Network Issue]:", err?.message || err);
+    fetchWarning = "Zoho Creator connection was temporarily interrupted. Retained current database records.";
+  }
+
+  // Load base/existing dataset from disk
+  let baseCsv = ZOHO_STUDENTS_CSV;
+  if (fs.existsSync(CSV_FILE_PATH)) {
+    const existingDiskData = await fs.promises.readFile(CSV_FILE_PATH, "utf8");
+    if (existingDiskData && existingDiskData.trim().length > 100) {
+      baseCsv = existingDiskData;
+    }
+  }
+
+  // If live CSV couldn't be fetched, return current disk records safely
+  if (!liveCsvText) {
+    const parsedRows = parseServerCSVRows(baseCsv);
+    const count = Math.max(0, parsedRows.length - 1);
+    const formattedDate = clientSyncTime || formatCurrentSyncDate(new Date());
+
+    return {
+      success: true,
+      count,
+      activeCount: 0,
+      refundedCount: 0,
+      newCount: 0,
+      updatedCount: 0,
+      lastSync: formattedDate,
+      latestStudent: "",
+      csv: baseCsv,
+      warning: fetchWarning
+    };
+  }
+
+  // Parse live Zoho CSV
+  const liveRows = parseServerCSVRows(liveCsvText);
+  if (liveRows.length < 2) {
+    throw new Error("Zoho Creator CSV contained no student data rows");
+  }
+
+  const liveHeaders = liveRows[0].map(h => h.trim().toLowerCase());
+  const liveHeaderMap = new Map<string, number>();
+  liveHeaders.forEach((h, idx) => liveHeaderMap.set(h, idx));
+
+  const getLiveVal = (row: string[], colName: string) => {
+    const idx = liveHeaderMap.get(colName.toLowerCase());
+    return idx !== undefined ? (row[idx] || "").trim() : "";
+  };
+
+  // Load existing dataset into map
+  const parsedRows = parseServerCSVRows(baseCsv);
+  const rawHeaders = parsedRows[0] || [];
+  const normalizedHeaders = rawHeaders.map(h => h.trim().toLowerCase());
+
+  const existingMap = new Map<string, Record<string, string>>();
+  const orderedKeys: string[] = [];
+
+  for (let i = 1; i < parsedRows.length; i++) {
+    const vals = parsedRows[i];
+    if (vals.length === 0 || (vals.length === 1 && !vals[0])) continue;
+    const rowObj: Record<string, string> = {};
+    normalizedHeaders.forEach((h, idx) => {
+      const canonicalHeader = CANONICAL_CSV_HEADERS.find(ch => ch.toLowerCase() === h) || h;
+      rowObj[canonicalHeader] = vals[idx] || "";
+    });
+
+    const studentId = (rowObj["Student ID"] || `row_${i}`).trim();
+    const key = studentId.toLowerCase();
+    existingMap.set(key, rowObj);
+    orderedKeys.push(key);
+  }
+
+  // Process live records from Zoho
+  const finalRecords: Record<string, string>[] = [];
+  const seenStudentIds = new Set<string>();
+  let updatedCount = 0;
+  let newCount = 0;
+
+  for (let i = 1; i < liveRows.length; i++) {
+    const r = liveRows[i];
+    if (!r || r.length <= 1) continue;
+
+    const idName = getLiveVal(r, "id - student name");
+    const idMatch = idName.match(/^([A-Za-z0-9_-]+)/);
+    const freshStudentId = idMatch ? idMatch[1] : (idName.split("-")[0] || idName).trim();
+    if (!freshStudentId) continue;
+
+    const key = freshStudentId.toLowerCase();
+    if (seenStudentIds.has(key)) continue;
+    seenStudentIds.add(key);
+
+    const freshRawName = getLiveVal(r, "your full name");
+    const freshFullName = freshRawName || (idName.includes("-") ? idName.replace(/^[^-]+-\s*/, "").trim() : "");
+    const rawPhoto = getLiveVal(r, "profile photo");
+    const photo = extractZohoPhotoUrl(rawPhoto);
+    const rawResume = getLiveVal(r, "your resume");
+    const resume = extractZohoResumeUrl(rawResume);
+
+    // Check if we have an existing disk record for this student (to retain auxiliary columns like CTC)
+    const existing = existingMap.get(key);
+
+    const studentRow: Record<string, string> = {
+      "Full Name": freshFullName,
+      "User ID": getLiveVal(r, "instructor name") || freshStudentId,
+      "Student ID": freshStudentId,
+      "Mobile Number": getLiveVal(r, "register mobile number") || existing?.["Mobile Number"] || "",
+      "Active Status": getLiveVal(r, "active status") || "Active",
+      "Enrolled on": getLiveVal(r, "orientation day") || existing?.["Enrolled on"] || "",
+      "Batch Details": getLiveVal(r, "batch details") || existing?.["Batch Details"] || "",
+      "Batch Timing": existing?.["Batch Timing"] || "9:00 AM - 1:00 PM",
+      "Gender": existing?.["Gender"] || "",
+      "Preferred Job Track": getLiveVal(r, "graduation stream") || existing?.["Preferred Job Track"] || "",
+      "Your Personal Mail ID": getLiveVal(r, "your personal mail id") || existing?.["Your Personal Mail ID"] || "",
+      "Permanent Address District": getLiveVal(r, "permanent address district") || existing?.["Permanent Address District"] || "",
+      "Permanent State": getLiveVal(r, "permanent state") || existing?.["Permanent State"] || "",
+      "Permanent Address Pincode": existing?.["Permanent Address Pincode"] || "",
+      "Highest Qualification": getLiveVal(r, "graduation degree name") || existing?.["Highest Qualification"] || "",
+      "Graduation Degree Name": getLiveVal(r, "graduation degree name") || existing?.["Graduation Degree Name"] || "",
+      "Graduation Stream": getLiveVal(r, "graduation stream") || existing?.["Graduation Stream"] || "",
+      "Graduation College / University Name": getLiveVal(r, "graduation college / university name") || existing?.["Graduation College / University Name"] || "",
+      "Graduation Year of Passing": getLiveVal(r, "graduation year of passing") || existing?.["Graduation Year of Passing"] || "",
+      "Graduation CGPA ": getLiveVal(r, "graduation cgpa / percentage obtained") || existing?.["Graduation CGPA "] || "",
+      "Post-Graduation Degree Name": existing?.["Post-Graduation Degree Name"] || "",
+      "Post-Graduation Stream": existing?.["Post-Graduation Stream"] || "",
+      "Post-Graduation College / University Name": existing?.["Post-Graduation College / University Name"] || "",
+      "Post Graduation Year of Passing": existing?.["Post Graduation Year of Passing"] || "",
+      "Post Graduation CGPA / Percentage Obtained": existing?.["Post Graduation CGPA / Percentage Obtained"] || "",
+      "Placed Organisation": getLiveVal(r, "placed organisation") || existing?.["Placed Organisation"] || "",
+      "External Placed Organisation": getLiveVal(r, "external placed organisation") || existing?.["External Placed Organisation"] || "",
+      "Placement Type": getLiveVal(r, "placed through") || existing?.["Placement Type"] || "",
+      "Placed Month": existing?.["Placed Month"] || "",
+      "CTC(LPA)": existing?.["CTC(LPA)"] || "",
+      "Profile Photo": photo || existing?.["Profile Photo"] || "",
+      "Resume": resume || existing?.["Resume"] || "",
+      "Instructor Name": getLiveVal(r, "instructor name") || existing?.["Instructor Name"] || "",
+      "Centre Name": getLiveVal(r, "centre name") || existing?.["Centre Name"] || ""
+    };
+
+    if (existing) {
+      updatedCount++;
+    } else {
+      newCount++;
+    }
+
+    finalRecords.push(studentRow);
+  }
+
+  // Sort canonical CSV: sort by student ID
+  finalRecords.sort((a, b) => {
+    const idA = a["Student ID"] || "";
+    const idB = b["Student ID"] || "";
+    return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: "base" });
+  });
+
+  // Calculate live counts
+  let activeCount = 0;
+  let refundedCount = 0;
+  finalRecords.forEach(r => {
+    const st = (r["Active Status"] || "").toLowerCase();
+    if (st === "active") activeCount++;
+    if (st === "refunded") refundedCount++;
+  });
+
+  // Build the updated canonical CSV
+  const headerLine = CANONICAL_CSV_HEADERS.join(",");
+  const rowLines: string[] = [];
+  for (const record of finalRecords) {
+    const line = CANONICAL_CSV_HEADERS.map(h => escapeCSVValue(record[h] || "")).join(",");
+    rowLines.push(line);
+  }
+
+  const updatedCsv = [headerLine, ...rowLines].join("\n");
+
+  // Persist to server disk
+  await fs.promises.writeFile(CSV_FILE_PATH, updatedCsv, "utf8");
+
+  const formattedDate = clientSyncTime || formatCurrentSyncDate(new Date());
+  const latestStudentName = getLiveVal(liveRows[1], "your full name") || getLiveVal(liveRows[1], "id - student name");
+
+  const syncInfo = {
+    lastSync: formattedDate,
+    updatedAt: new Date().toISOString(),
+    source: "Zoho Creator Live Direct CSV",
+    totalCount: finalRecords.length,
+    activeCount,
+    refundedCount,
+    newCount,
+    updatedCount,
+    latestStudent: latestStudentName
+  };
+
+  await fs.promises.writeFile(SYNC_INFO_FILE_PATH, JSON.stringify(syncInfo, null, 2), "utf8");
+  console.log(`[Zoho Sync Complete] Total: ${finalRecords.length}, Active: ${activeCount}, Refunded: ${refundedCount}, Updated: ${updatedCount}, New: ${newCount}, LastSync: ${formattedDate}`);
+
+  return {
+    success: true,
+    count: finalRecords.length,
+    activeCount,
+    refundedCount,
+    newCount,
+    updatedCount,
+    lastSync: formattedDate,
+    latestStudent: syncInfo.latestStudent,
+    csv: updatedCsv
+  };
+}
+
+// GET endpoint to fetch latest Zoho sync timestamp and metadata
 app.get("/api/zoho/sync", async (req, res) => {
   try {
     if (fs.existsSync(SYNC_INFO_FILE_PATH)) {
@@ -104,20 +598,60 @@ app.get("/api/zoho/sync", async (req, res) => {
   }
 });
 
-// POST endpoint to update latest Zoho sync timestamp
-app.post("/api/zoho/sync", async (req, res) => {
+// POST endpoint to trigger live Zoho synchronization or update timestamp
+app.post(["/api/zoho/sync", "/api/zoho/live-sync"], async (req, res) => {
   try {
-    const { syncDate } = req.body || {};
-    const info = {
-      lastSync: syncDate || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      source: "Zoho Creator Live Report"
-    };
-    await fs.promises.writeFile(SYNC_INFO_FILE_PATH, JSON.stringify(info, null, 2), "utf8");
-    return res.json({ success: true, ...info });
+    // If request explicitly provided a manual syncDate only (legacy) and requested no live fetch
+    if (req.body?.onlyDate && req.body?.syncDate) {
+      const info = {
+        lastSync: req.body.syncDate,
+        updatedAt: new Date().toISOString(),
+        source: "Zoho Creator Live Report"
+      };
+      await fs.promises.writeFile(SYNC_INFO_FILE_PATH, JSON.stringify(info, null, 2), "utf8");
+      return res.json({ success: true, ...info });
+    }
+
+    // Default: Perform live sync from Zoho Creator!
+    const syncResult = await syncWithZohoLive(req.body?.clientSyncTime);
+    return res.json(syncResult);
   } catch (error: any) {
-    console.error("Error saving Zoho sync info:", error);
-    return res.status(500).json({ error: "Failed to persist Zoho sync date" });
+    console.error("[Zoho Sync Fallback]:", error?.message || error);
+    
+    // Resilient fallback: return existing CSV cleanly with warning
+    let baseCsv = ZOHO_STUDENTS_CSV;
+    if (fs.existsSync(CSV_FILE_PATH)) {
+      try {
+        const diskData = await fs.promises.readFile(CSV_FILE_PATH, "utf8");
+        if (diskData && diskData.length > 100) baseCsv = diskData;
+      } catch (_) {}
+    }
+    
+    let lastSync = req.body?.clientSyncTime || formatCurrentSyncDate(new Date());
+    let latestStudent = "";
+    if (fs.existsSync(SYNC_INFO_FILE_PATH)) {
+      try {
+        const info = JSON.parse(await fs.promises.readFile(SYNC_INFO_FILE_PATH, "utf8"));
+        if (!req.body?.clientSyncTime && info.lastSync) lastSync = info.lastSync;
+        if (info.latestStudent) latestStudent = info.latestStudent;
+      } catch (_) {}
+    }
+
+    const rows = parseServerCSVRows(baseCsv);
+    const count = Math.max(0, rows.length - 1);
+
+    return res.json({
+      success: true,
+      count,
+      activeCount: 0,
+      refundedCount: 0,
+      newCount: 0,
+      updatedCount: 0,
+      lastSync,
+      latestStudent,
+      csv: baseCsv,
+      warning: "Remote Zoho server connection was temporarily interrupted. Retained current database records."
+    });
   }
 });
 
