@@ -354,11 +354,20 @@ export default function App() {
     setSyncToast(null);
     try {
       const clientTime = formatSyncDate(new Date());
-      const res = await fetch("/api/zoho/live-sync", {
+      let res = await fetch("/api/zoho/live-sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientSyncTime: clientTime })
       });
+
+      if (!res.ok) {
+        // Fallback endpoint
+        res = await fetch("/api/zoho/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clientSyncTime: clientTime })
+        });
+      }
 
       let newCSV = "";
       let totalCount = 0;
@@ -381,7 +390,7 @@ export default function App() {
         if (data.warning) warningMsg = data.warning;
       } else {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || "Zoho server live sync failed.");
+        throw new Error(errJson.error || "Unable to sync from Zoho server. Please ensure the latest Vercel code is deployed.");
       }
 
       if (!newCSV) {
@@ -424,7 +433,7 @@ export default function App() {
       setIsSyncing(false);
       setTimeout(() => {
         setSyncToast(null);
-      }, 5000);
+      }, 6000);
     }
   };
  
