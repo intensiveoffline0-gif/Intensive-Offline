@@ -92,6 +92,17 @@ const CSV_FILE_PATH = path.join(process.cwd(), "custom_students.csv");
 const LOGO_FILE_PATH = path.join(process.cwd(), "custom_logo.txt");
 const SYNC_INFO_FILE_PATH = path.join(process.cwd(), "zoho_sync_info.json");
 
+async function persistCsvDatasetAndCode(csv: string) {
+  await fs.promises.writeFile(CSV_FILE_PATH, csv, "utf8");
+  try {
+    const tsPath = path.join(process.cwd(), "src", "data", "zohoStudentsCSV.ts");
+    const tsCode = `export const ZOHO_STUDENTS_CSV = ${JSON.stringify(csv)};\n`;
+    await fs.promises.writeFile(tsPath, tsCode, "utf8");
+  } catch (e) {
+    console.warn("Could not sync src/data/zohoStudentsCSV.ts:", e);
+  }
+}
+
 const ZOHO_REPORT_PERMA_URL = "https://creatorapp.zohopublic.in/nxtwave/intensive-offline/report-perma/Student_Profiles_AI_Studio/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0";
 
 const CANONICAL_CSV_HEADERS = [
@@ -551,8 +562,8 @@ async function syncWithZohoLive(clientSyncTime?: string): Promise<{
 
   const updatedCsv = [headerLine, ...rowLines].join("\n");
 
-  // Persist to server disk
-  await fs.promises.writeFile(CSV_FILE_PATH, updatedCsv, "utf8");
+  // Persist to server disk and sync with bundled code
+  await persistCsvDatasetAndCode(updatedCsv);
 
   const formattedDate = clientSyncTime || formatCurrentSyncDate(new Date());
   const latestStudentName = getLiveVal(liveRows[1], "your full name") || getLiveVal(liveRows[1], "id - student name");
@@ -899,7 +910,7 @@ app.post("/api/csv", async (req, res) => {
       }
       
       const updatedCSV = rows.map(row => row.map(escapeCSVValue).join(",")).join("\n");
-      await fs.promises.writeFile(CSV_FILE_PATH, updatedCSV, "utf8");
+      await persistCsvDatasetAndCode(updatedCSV);
       console.log(`[CSV Webhook] Real-time upsert successful. Updated: ${upsertCount}, Inserted: ${insertCount}. Total records: ${rows.length - 1}`);
       
       return res.json({ 
@@ -915,7 +926,7 @@ app.post("/api/csv", async (req, res) => {
       return res.status(400).json({ error: "Invalid payload: CSV content is empty or missing." });
     }
 
-    await fs.promises.writeFile(CSV_FILE_PATH, csv, "utf8");
+    await persistCsvDatasetAndCode(csv);
     console.log(`[CSV Upload] Persisted CSV successfully updated. Size: ${csv.length} bytes.`);
     return res.json({ success: true, count: csv.split("\n").filter(Boolean).length - 1 });
   } catch (error: any) {

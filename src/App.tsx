@@ -207,45 +207,47 @@ export default function App() {
   // Load persistent CSV, logo, and sync info from server upon mount
   useEffect(() => {
     const fetchSavedData = async () => {
+      let loaded = false;
       try {
         const res = await fetch("/api/csv");
         if (res.ok) {
           const data = await res.json();
-          if (data.csv) {
+          if (data && data.csv) {
             const parsed = parseStudentCSV(data.csv);
             if (parsed.length > 0) {
               setStudents(parsed);
               setRawCSV(data.csv);
               localStorage.setItem("nxtwave_custom_csv", data.csv);
               setSelectedStudentId(parsed[0].studentId);
-            }
-          } else {
-            // Server has no custom CSV (e.g. cold start / container recycle).
-            // Sync up from client's localStorage if a custom CSV exists!
-            const localCSV = localStorage.getItem("nxtwave_custom_csv");
-            if (localCSV) {
-              const parsed = parseStudentCSV(localCSV);
-              if (parsed.length > 0) {
-                setStudents(parsed);
-                setRawCSV(localCSV);
-                setSelectedStudentId(parsed[0].studentId);
-                
-                // background upload to restore the server-side cache
-                const savedPin = sessionStorage.getItem("nxtwave_admin_pin") || "admin0929";
-                fetch("/api/csv", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ csv: localCSV, pin: savedPin }),
-                }).catch(err => console.error("Self-healing auto-upload of CSV failed:", err));
-              }
+              loaded = true;
             }
           }
         }
       } catch (err) {
-        console.error("Failed to load server-persistent student registry:", err);
-      } finally {
-        setIsLoadingCSV(false);
+        console.warn("Could not reach /api/csv, attempting localStorage recovery:", err);
       }
+
+      if (!loaded) {
+        // Sync up from client's localStorage if a custom CSV exists!
+        const localCSV = localStorage.getItem("nxtwave_custom_csv");
+        if (localCSV) {
+          const parsed = parseStudentCSV(localCSV);
+          if (parsed.length > 0) {
+            setStudents(parsed);
+            setRawCSV(localCSV);
+            setSelectedStudentId(parsed[0].studentId);
+            
+            // Background upload to restore server-side cache if available
+            const savedPin = sessionStorage.getItem("nxtwave_admin_pin") || "admin0929";
+            fetch("/api/csv", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ csv: localCSV, pin: savedPin }),
+            }).catch(() => {});
+          }
+        }
+      }
+      setIsLoadingCSV(false);
 
       try {
         const logoRes = await fetch("/api/logo");
