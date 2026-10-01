@@ -1,4 +1,4 @@
-import { syncWithZohoLive } from "../zohoSyncCore.ts";
+import { syncWithZohoLive } from "../zohoSyncCore";
 
 export default async function handler(req: any, res: any) {
   res.setHeader("Access-Control-Allow-Origin", "*");

@@ -1,6 +1,6 @@
-import fs from "fs";
-import path from "path";
-import { ZOHO_STUDENTS_CSV } from "../src/data/zohoStudentsCSV.ts";
+import * as fs from "fs";
+import * as path from "path";
+import { ZOHO_STUDENTS_CSV } from "../src/data/zohoStudentsCSV";
 
 export const ZOHO_DIRECT_CSV_URL = "https://creatorapp.zohopublic.in/nxtwave/intensive-offline/csv/Student_Profiles_AI_Studio/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0";
 

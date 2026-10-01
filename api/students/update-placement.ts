@@ -1,4 +1,4 @@
-import { updateStudentPlacement } from "../zohoSyncCore.ts";
+import { updateStudentPlacement } from "../zohoSyncCore";
 
 export default async function handler(req: any, res: any) {
   res.setHeader("Access-Control-Allow-Origin", "*");

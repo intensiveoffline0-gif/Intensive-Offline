@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild api/zoho/live-sync.ts --bundle --platform=node --format=esm --outfile=api/zoho/live-sync.js && esbuild api/zoho/sync.ts --bundle --platform=node --format=esm --outfile=api/zoho/sync.js && esbuild api/csv.ts --bundle --platform=node --format=esm --outfile=api/csv.js && esbuild api/logo.ts --bundle --platform=node --format=esm --outfile=api/logo.js && esbuild api/students/update-placement.ts --bundle --platform=node --format=esm --outfile=api/students/update-placement.js",
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"

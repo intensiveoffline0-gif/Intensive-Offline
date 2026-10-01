@@ -1,4 +1,4 @@
-import { getCsvDataset, persistCsvDataset, parseServerCSVRows } from "./zohoSyncCore.ts";
+import { getCsvDataset, persistCsvDataset, parseServerCSVRows } from "./zohoSyncCore";
 
 export default async function handler(req: any, res: any) {
   // Set CORS headers
