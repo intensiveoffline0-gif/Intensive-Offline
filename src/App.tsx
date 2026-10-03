@@ -15,7 +15,7 @@ import {
   BarChart3, Users, ShieldAlert, Award, FileUp, 
   Search, SlidersHorizontal, Table, Download, User, 
   ChevronRight, BrainCircuit, ExternalLink, HelpCircle,
-  MapPin, RefreshCw
+  MapPin, RefreshCw, RotateCcw, X
 } from "lucide-react";
 
 const NxtWaveLogo = ({ 
@@ -309,6 +309,36 @@ export default function App() {
   const [filterStartDate, setFilterStartDate] = useState<Date | null>(null);
   const [filterEndDate, setFilterEndDate] = useState<Date | null>(null);
   const [filterBatch, setFilterBatch] = useState<string>("All");
+
+  // Track if any search filter is applied
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (searchQuery.trim() !== "") count++;
+    if (filterCentre !== "All") count++;
+    if (filterCollege !== "All") count++;
+    if (filterDistrict !== "All") count++;
+    if (filterState !== "All") count++;
+    if (filterPlacedStatus !== "All") count++;
+    if (filterTrack !== "All") count++;
+    if (filterBatch !== "All") count++;
+    if (filterStartDate !== null || filterEndDate !== null) count++;
+    return count;
+  }, [searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+
+  const hasActiveFilters = activeFiltersCount > 0;
+
+  const handleClearAllFilters = () => {
+    setSearchName("");
+    setFilterCentre("All");
+    setFilterCollege("All");
+    setFilterDistrict("All");
+    setFilterState("All");
+    setFilterPlacedStatus("All");
+    setFilterTrack("All");
+    setFilterBatch("All");
+    setFilterStartDate(null);
+    setFilterEndDate(null);
+  };
  
   // On CSV uploaded (Persisted dynamically via backend server storage)
   const handleCSVLoaded = async (newStudents: Student[], newCSV: string, isZohoSync = false): Promise<void> => {
@@ -665,8 +695,10 @@ export default function App() {
   // Aggregate Core Metrics (KPIs)
   const stats = useMemo(() => {
     const total = students.length;
-    const active = students.filter(s => s.activeStatus?.toLowerCase() === "active").length;
+    // Refunded learners
     const refunded = students.filter(s => s.activeStatus?.toLowerCase() === "refunded").length;
+    // Active Learners includes all non-refunded enrolled learners (1,725 Active + 1 Changed Program = 1,726)
+    const active = Math.max(0, total - refunded);
     
     // Placed count calculation
     const placed = students.filter(s => !!(s.placedOrganisation || s.externalPlacedOrganisation)).length;
@@ -942,7 +974,7 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-              {students.length} Records Active
+              {stats.active} Records Active ({stats.total} Enrolled)
             </span>
           </div>
         </div>
@@ -956,20 +988,20 @@ export default function App() {
                 title="Total Enrolls" 
                 value={stats.total} 
                 icon={<Users className="h-5 w-5" />} 
-                subtitle="Total Number of Students Enrolled"
+                subtitle="Master Enrollments Report count"
               />
               <MetricCard 
                 title="Active Learners" 
                 value={stats.active} 
                 icon={<Users className="h-5 w-5 text-emerald-500" />} 
-                subtitle={`${stats.refunded} refunded students excluded`}
+                subtitle={`${stats.refunded} refunded learners excluded`}
                 trend={{ value: `${((stats.active/stats.total)*100).toFixed(1)}% Active`, isPositive: true }}
               />
               <MetricCard 
                 title="Refunds Count" 
                 value={stats.refunded} 
                 icon={<ShieldAlert className="h-5 w-5 text-rose-500" />} 
-                subtitle="Total tuition fee refund executions"
+                subtitle="Includes early refunds before profile submission"
                 trend={{ value: `${((stats.refunded/stats.total)*100).toFixed(1)}% Refunded`, isPositive: false }}
               />
             </div>
@@ -979,6 +1011,19 @@ export default function App() {
               <div className="flex items-center gap-2.5">
                 <SlidersHorizontal className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" />
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest">Search Filters</span>
+                {hasActiveFilters && (
+                  <button
+                    onClick={handleClearAllFilters}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all cursor-pointer shadow-xs animate-fadeIn"
+                    title="Clear all applied filters"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    <span>Clear Filters</span>
+                    <span className="px-1.5 py-0.2 bg-rose-200/60 dark:bg-rose-800/60 rounded-full text-[10px]">
+                      {activeFiltersCount}
+                    </span>
+                  </button>
+                )}
               </div>
               
               <div className="flex flex-wrap gap-3 items-center w-full md:w-auto">
@@ -989,8 +1034,17 @@ export default function App() {
                     placeholder="Search name, roll num, email..."
                     value={searchQuery}
                     onChange={(e) => setSearchName(e.target.value)}
-                    className="pl-9 pr-4 py-1.5 w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs placeholder-slate-400 dark:placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-slate-100"
+                    className="pl-9 pr-8 py-1.5 w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs placeholder-slate-400 dark:placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-slate-100"
                   />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchName("")}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      title="Clear search text"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
 
                 {/* Enrolled Date Range Filter */}
@@ -1063,6 +1117,17 @@ export default function App() {
                   placeholder="-Select Job Track-"
                   optionFormatter={(track) => track.replace(/_/g, " ")}
                 />
+
+                {hasActiveFilters && (
+                  <button
+                    onClick={handleClearAllFilters}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/50 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer animate-fadeIn"
+                    title="Clear all active filters"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    <span>Clear Filters</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1174,6 +1239,17 @@ export default function App() {
                 totalCount={students.length}
                 placeholder="-Select Batch-"
               />
+
+              {hasActiveFilters && (
+                <button
+                  onClick={handleClearAllFilters}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/50 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer animate-fadeIn"
+                  title="Clear all active filters"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>Clear Filters ({activeFiltersCount})</span>
+                </button>
+              )}
             </div>
 
             {/* Grid table representation */}

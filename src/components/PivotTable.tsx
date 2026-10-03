@@ -102,36 +102,26 @@ export function PivotTable({ students }: PivotTableProps) {
       return stringVal;
     }
 
+    if (field === "activeStatus") {
+      const st = String(val || "").trim().toLowerCase();
+      return st === "refunded" ? "Refunded" : "Active";
+    }
+
     return String(val).trim();
   };
 
-  // Compute Pivot Grid (strictly excluding "Changed Program" and filtering by Centre Name)
+  // Compute Pivot Grid (filtering by Centre Name)
   const pivotData = useMemo(() => {
-    // 1. Strictly filter out Changed Program records and filter by Centre Name
+    // 1. Filter by Centre Name if selected
     const validStudents = students.filter(s => {
-      const status = (s.activeStatus || "").trim().toLowerCase();
-      if (status.includes("changed program") || status.includes("change program")) {
-        return false;
-      }
-      const batch = (s.batchDetails || "").trim().toLowerCase();
-      if (batch.includes("changed program") || batch.includes("change program")) {
-        return false;
-      }
-
       if (selectedCentre !== "All") {
         const studentCentre = (s.centreName || "").trim().toUpperCase();
         if (studentCentre !== selectedCentre.trim().toUpperCase()) {
           return false;
         }
       }
-
       return true;
     });
-
-    const isChangedProgramVal = (val: string): boolean => {
-      const v = (val || "").trim().toLowerCase();
-      return v.includes("changed program") || v.includes("change program");
-    };
 
     // Unique row titles
     const rowSet = new Set<string>();
@@ -141,8 +131,8 @@ export function PivotTable({ students }: PivotTableProps) {
     validStudents.forEach(s => {
       const r = getFieldValue(s, rowDim);
       const c = getFieldValue(s, colDim);
-      if (r && !isChangedProgramVal(r)) rowSet.add(r);
-      if (c && !isChangedProgramVal(c)) colSet.add(c);
+      if (r) rowSet.add(r);
+      if (c) colSet.add(c);
     });
 
     const getBatchIndex = (name: string): number => {
@@ -176,7 +166,13 @@ export function PivotTable({ students }: PivotTableProps) {
     };
 
     const rows = Array.from(rowSet).sort(sortingFn);
-    const cols = Array.from(colSet).sort(sortingFn);
+    const cols = Array.from(colSet).sort((a, b) => {
+      if (colDim === "activeStatus") {
+        if (a.toLowerCase() === "active") return -1;
+        if (b.toLowerCase() === "active") return 1;
+      }
+      return sortingFn(a, b);
+    });
 
     // Pivot cell matrix: row -> col -> array of students
     const matrix: Record<string, Record<string, Student[]>> = {};

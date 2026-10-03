@@ -45,7 +45,7 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
           <span className={`text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider ${
             isRefunded ? "bg-red-400/20 text-red-300 border border-red-400/30" : "bg-emerald-400/20 text-emerald-300 border border-emerald-400/30"
           }`}>
-            {student.activeStatus || "Active"}
+            {isRefunded ? "Refunded" : "Active"}
           </span>
         </div>
         
@@ -98,7 +98,7 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
               <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
                 <span className="text-slate-500">Active Status</span>
                 <span className={`font-semibold ${isRefunded ? "text-rose-600" : "text-emerald-600"}`}>
-                  {student.activeStatus}
+                  {isRefunded ? "Refunded" : "Active"}
                 </span>
               </div>
               <div className="flex justify-between items-center py-1.5 border-b border-slate-100">

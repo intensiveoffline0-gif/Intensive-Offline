@@ -324,15 +324,16 @@ function formatCurrentSyncDate(d = new Date()): string {
   return `${day} ${month} ${year}, ${hoursStr}:${minutes} ${ampm}`;
 }
 
-const ZOHO_DIRECT_CSV_URL = "https://creatorapp.zohopublic.in/nxtwave/intensive-offline/csv/Student_Profiles_AI_Studio/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0";
+const MASTER_ENROLLMENT_REPORT_CSV_URL = "https://creatorapp.zohopublic.in/nxtwave/intensive-offline/csv/Students_Data_Report/y4KgkdzE1CXYTUnwEBs1zantAYKaBw108xs9z3njNj6V2sB3hS7GBuaGjkTVHV8wZqMVzGRNtVQpp3O5sAAmF3dQWYD8T5f6UpNh";
+const STUDENT_PROFILES_REPORT_CSV_URL = "https://creatorapp.zohopublic.in/nxtwave/intensive-offline/csv/Student_Profiles_AI_Studio/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0";
 
-// Fetch live CSV directly from Zoho Creator with cache-busting and connection resets handled
-async function fetchLiveZohoCsv(): Promise<string> {
+// Fetch live CSV report directly from Zoho Creator with cache-busting and connection resets handled
+async function fetchLiveZohoCsvReport(reportUrl: string): Promise<string> {
   let lastError: any = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      console.log(`[Zoho Sync] Requesting direct live CSV from Zoho Creator (attempt ${attempt}/3)...`);
-      const fetchUrl = `${ZOHO_DIRECT_CSV_URL}?_t=${Date.now()}`;
+      console.log(`[Zoho Sync] Requesting direct live CSV from Zoho Creator (${reportUrl.includes("Students_Data_Report") ? "Master Enrollments" : "Student Profiles"}, attempt ${attempt}/3)...`);
+      const fetchUrl = `${reportUrl}?_t=${Date.now()}_${attempt}`;
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 25000);
@@ -364,17 +365,18 @@ async function fetchLiveZohoCsv(): Promise<string> {
       lastError = err;
       console.warn(`[Zoho Sync] Attempt ${attempt} failed:`, err?.message || err);
       if (attempt < 3) {
-        await new Promise(r => setTimeout(r, 1000 * attempt));
+        await new Promise(r => setTimeout(r, 600 * attempt));
       }
     }
   }
-  throw lastError || new Error("Failed to fetch live CSV from Zoho Creator");
+  throw lastError || new Error(`Failed to fetch live CSV from ${reportUrl}`);
 }
 
-// Live Zoho Sync Engine: pulls all live records directly from Zoho Creator and merges with database
+// Live Zoho Sync Engine: pulls all live records from both Master Enrollments and Profiles reports
 async function syncWithZohoLive(clientSyncTime?: string): Promise<{
   success: boolean;
   count: number;
+  totalEnrolls: number;
   activeCount: number;
   refundedCount: number;
   newCount: number;
@@ -384,11 +386,17 @@ async function syncWithZohoLive(clientSyncTime?: string): Promise<{
   csv: string;
   warning?: string;
 }> {
-  let liveCsvText = "";
+  let enrollCsvText = "";
+  let profCsvText = "";
   let fetchWarning = "";
 
   try {
-    liveCsvText = await fetchLiveZohoCsv();
+    const [resEnroll, resProf] = await Promise.all([
+      fetchLiveZohoCsvReport(MASTER_ENROLLMENT_REPORT_CSV_URL),
+      fetchLiveZohoCsvReport(STUDENT_PROFILES_REPORT_CSV_URL)
+    ]);
+    enrollCsvText = resEnroll;
+    profCsvText = resProf;
   } catch (err: any) {
     console.warn("[Zoho Sync Network Issue]:", err?.message || err);
     fetchWarning = "Zoho Creator connection was temporarily interrupted. Retained current database records.";
@@ -404,16 +412,25 @@ async function syncWithZohoLive(clientSyncTime?: string): Promise<{
   }
 
   // If live CSV couldn't be fetched, return current disk records safely
-  if (!liveCsvText) {
+  if (!enrollCsvText || !profCsvText) {
     const parsedRows = parseServerCSVRows(baseCsv);
     const count = Math.max(0, parsedRows.length - 1);
     const formattedDate = clientSyncTime || formatCurrentSyncDate(new Date());
 
+    let activeCount = 0;
+    let refundedCount = 0;
+    for (let i = 1; i < parsedRows.length; i++) {
+      const st = (parsedRows[i][4] || "").toLowerCase();
+      if (st === "active") activeCount++;
+      if (st === "refunded") refundedCount++;
+    }
+
     return {
       success: true,
       count,
-      activeCount: 0,
-      refundedCount: 0,
+      totalEnrolls: count,
+      activeCount,
+      refundedCount,
       newCount: 0,
       updatedCount: 0,
       lastSync: formattedDate,
@@ -423,29 +440,45 @@ async function syncWithZohoLive(clientSyncTime?: string): Promise<{
     };
   }
 
-  // Parse live Zoho CSV
-  const liveRows = parseServerCSVRows(liveCsvText);
-  if (liveRows.length < 2) {
-    throw new Error("Zoho Creator CSV contained no student data rows");
+  // Parse Master Enrollments CSV and Profiles CSV
+  const enrollRows = parseServerCSVRows(enrollCsvText);
+  const profRows = parseServerCSVRows(profCsvText);
+
+  if (enrollRows.length < 2) {
+    throw new Error("Master Enrollments report contained no student rows");
   }
 
-  const liveHeaders = liveRows[0].map(h => h.trim().toLowerCase());
-  const liveHeaderMap = new Map<string, number>();
-  liveHeaders.forEach((h, idx) => liveHeaderMap.set(h, idx));
+  const enrollHeaders = enrollRows[0].map(h => h.trim().toLowerCase());
+  const profHeaders = profRows[0].map(h => h.trim().toLowerCase());
 
-  const getLiveVal = (row: string[], colName: string) => {
-    const idx = liveHeaderMap.get(colName.toLowerCase());
-    return idx !== undefined ? (row[idx] || "").trim() : "";
+  const getEnrollVal = (row: string[], col: string) => {
+    const idx = enrollHeaders.findIndex(h => h.includes(col.toLowerCase()));
+    return idx !== -1 ? (row[idx] || "").trim() : "";
+  };
+  const getProfVal = (row: string[], col: string) => {
+    const idx = profHeaders.findIndex(h => h.includes(col.toLowerCase()));
+    return idx !== -1 ? (row[idx] || "").trim() : "";
   };
 
-  // Load existing dataset into map
+  // Build profile lookup map
+  const profMap = new Map<string, string[]>();
+  for (let i = 1; i < profRows.length; i++) {
+    const r = profRows[i];
+    if (!r || r.length <= 1) continue;
+    const idName = getProfVal(r, "id - student name");
+    const m = idName.match(/\b(I\d{2}[A-Za-z]\d{3,4})\b/i);
+    const sid = m ? m[1].toUpperCase() : (idName.split("-")[0] || idName).trim().toUpperCase();
+    if (sid) {
+      profMap.set(sid, r);
+    }
+  }
+
+  // Load existing disk records into map
   const parsedRows = parseServerCSVRows(baseCsv);
   const rawHeaders = parsedRows[0] || [];
   const normalizedHeaders = rawHeaders.map(h => h.trim().toLowerCase());
 
   const existingMap = new Map<string, Record<string, string>>();
-  const orderedKeys: string[] = [];
-
   for (let i = 1; i < parsedRows.length; i++) {
     const vals = parsedRows[i];
     if (vals.length === 0 || (vals.length === 1 && !vals[0])) continue;
@@ -455,77 +488,47 @@ async function syncWithZohoLive(clientSyncTime?: string): Promise<{
       rowObj[canonicalHeader] = vals[idx] || "";
     });
 
-    const studentId = (rowObj["Student ID"] || `row_${i}`).trim();
-    const key = studentId.toLowerCase();
-    existingMap.set(key, rowObj);
-    orderedKeys.push(key);
+    const studentId = (rowObj["Student ID"] || `row_${i}`).trim().toUpperCase();
+    existingMap.set(studentId, rowObj);
   }
 
-  // Process live records from Zoho
+  // Process master enrollment records
   const finalRecords: Record<string, string>[] = [];
-  const seenStudentIds = new Set<string>();
+  const seenIds = new Set<string>();
+  let totalActive = 0;
+  let totalRefunded = 0;
   let updatedCount = 0;
   let newCount = 0;
 
-  for (let i = 1; i < liveRows.length; i++) {
-    const r = liveRows[i];
-    if (!r || r.length <= 1) continue;
+  for (let i = 1; i < enrollRows.length; i++) {
+    const er = enrollRows[i];
+    if (!er || er.length <= 1) continue;
 
-    const idName = getLiveVal(r, "id - student name");
-    const idMatch = idName.match(/^([A-Za-z0-9_-]+)/);
-    const freshStudentId = idMatch ? idMatch[1] : (idName.split("-")[0] || idName).trim();
-    if (!freshStudentId) continue;
+    const rawSid = getEnrollVal(er, "student id");
+    const sid = rawSid.toUpperCase();
+    if (!sid || seenIds.has(sid)) continue;
+    seenIds.add(sid);
 
-    const key = freshStudentId.toLowerCase();
-    if (seenStudentIds.has(key)) continue;
-    seenStudentIds.add(key);
+    const masterStatus = getEnrollVal(er, "active status") || "Active";
+    const fullName = getEnrollVal(er, "full name");
+    const mobile = getEnrollVal(er, "mobile number");
+    const email = getEnrollVal(er, "email");
+    const batch = getEnrollVal(er, "batch details");
+    const centre = getEnrollVal(er, "centre name");
+    const enrolledOn = getEnrollVal(er, "enrolled on");
+    const gender = getEnrollVal(er, "gender");
+    const state = getEnrollVal(er, "state");
+    const track = getEnrollVal(er, "preferred job track");
 
-    const freshRawName = getLiveVal(r, "your full name");
-    const freshFullName = freshRawName || (idName.includes("-") ? idName.replace(/^[^-]+-\s*/, "").trim() : "");
-    const rawPhoto = getLiveVal(r, "profile photo");
-    const photo = extractZohoPhotoUrl(rawPhoto);
-    const rawResume = getLiveVal(r, "your resume");
-    const resume = extractZohoResumeUrl(rawResume);
+    const stLower = masterStatus.toLowerCase();
+    if (stLower === "refunded") {
+      totalRefunded++;
+    } else {
+      totalActive++;
+    }
 
-    // Check if we have an existing disk record for this student (to retain auxiliary columns like CTC)
-    const existing = existingMap.get(key);
-
-    const studentRow: Record<string, string> = {
-      "Full Name": freshFullName,
-      "User ID": getLiveVal(r, "instructor name") || freshStudentId,
-      "Student ID": freshStudentId,
-      "Mobile Number": getLiveVal(r, "register mobile number") || existing?.["Mobile Number"] || "",
-      "Active Status": getLiveVal(r, "active status") || "Active",
-      "Enrolled on": getLiveVal(r, "orientation day") || existing?.["Enrolled on"] || "",
-      "Batch Details": getLiveVal(r, "batch details") || existing?.["Batch Details"] || "",
-      "Batch Timing": existing?.["Batch Timing"] || "9:00 AM - 1:00 PM",
-      "Gender": existing?.["Gender"] || "",
-      "Preferred Job Track": getLiveVal(r, "graduation stream") || existing?.["Preferred Job Track"] || "",
-      "Your Personal Mail ID": getLiveVal(r, "your personal mail id") || existing?.["Your Personal Mail ID"] || "",
-      "Permanent Address District": getLiveVal(r, "permanent address district") || existing?.["Permanent Address District"] || "",
-      "Permanent State": getLiveVal(r, "permanent state") || existing?.["Permanent State"] || "",
-      "Permanent Address Pincode": existing?.["Permanent Address Pincode"] || "",
-      "Highest Qualification": getLiveVal(r, "graduation degree name") || existing?.["Highest Qualification"] || "",
-      "Graduation Degree Name": getLiveVal(r, "graduation degree name") || existing?.["Graduation Degree Name"] || "",
-      "Graduation Stream": getLiveVal(r, "graduation stream") || existing?.["Graduation Stream"] || "",
-      "Graduation College / University Name": getLiveVal(r, "graduation college / university name") || existing?.["Graduation College / University Name"] || "",
-      "Graduation Year of Passing": getLiveVal(r, "graduation year of passing") || existing?.["Graduation Year of Passing"] || "",
-      "Graduation CGPA ": getLiveVal(r, "graduation cgpa / percentage obtained") || existing?.["Graduation CGPA "] || "",
-      "Post-Graduation Degree Name": existing?.["Post-Graduation Degree Name"] || "",
-      "Post-Graduation Stream": existing?.["Post-Graduation Stream"] || "",
-      "Post-Graduation College / University Name": existing?.["Post-Graduation College / University Name"] || "",
-      "Post Graduation Year of Passing": existing?.["Post Graduation Year of Passing"] || "",
-      "Post Graduation CGPA / Percentage Obtained": existing?.["Post Graduation CGPA / Percentage Obtained"] || "",
-      "Placed Organisation": getLiveVal(r, "placed organisation") || existing?.["Placed Organisation"] || "",
-      "External Placed Organisation": getLiveVal(r, "external placed organisation") || existing?.["External Placed Organisation"] || "",
-      "Placement Type": getLiveVal(r, "placed through") || existing?.["Placement Type"] || "",
-      "Placed Month": existing?.["Placed Month"] || "",
-      "CTC(LPA)": existing?.["CTC(LPA)"] || "",
-      "Profile Photo": photo || existing?.["Profile Photo"] || "",
-      "Resume": resume || existing?.["Resume"] || "",
-      "Instructor Name": getLiveVal(r, "instructor name") || existing?.["Instructor Name"] || "",
-      "Centre Name": getLiveVal(r, "centre name") || existing?.["Centre Name"] || ""
-    };
+    const pr = profMap.get(sid);
+    const existing = existingMap.get(sid);
 
     if (existing) {
       updatedCount++;
@@ -533,7 +536,99 @@ async function syncWithZohoLive(clientSyncTime?: string): Promise<{
       newCount++;
     }
 
+    const photo = pr ? extractZohoPhotoUrl(getProfVal(pr, "profile photo")) : (existing?.["Profile Photo"] || "");
+    const resume = pr ? extractZohoResumeUrl(getProfVal(pr, "your resume")) : (existing?.["Resume"] || "");
+
+    const studentRow: Record<string, string> = {
+      "Full Name": (pr ? getProfVal(pr, "your full name") : "") || fullName || existing?.["Full Name"] || "",
+      "User ID": (pr ? getProfVal(pr, "instructor name") : "") || sid || existing?.["User ID"] || "",
+      "Student ID": sid,
+      "Mobile Number": mobile || (pr ? getProfVal(pr, "register mobile number") : "") || existing?.["Mobile Number"] || "",
+      "Active Status": masterStatus,
+      "Enrolled on": enrolledOn || (pr ? getProfVal(pr, "orientation day") : "") || existing?.["Enrolled on"] || "",
+      "Batch Details": batch || (pr ? getProfVal(pr, "batch details") : "") || existing?.["Batch Details"] || "",
+      "Batch Timing": existing?.["Batch Timing"] || "9:00 AM - 1:00 PM",
+      "Gender": gender || existing?.["Gender"] || "",
+      "Preferred Job Track": track || (pr ? getProfVal(pr, "graduation stream") : "") || existing?.["Preferred Job Track"] || "",
+      "Your Personal Mail ID": email || (pr ? getProfVal(pr, "your personal mail id") : "") || existing?.["Your Personal Mail ID"] || "",
+      "Permanent Address District": (pr ? getProfVal(pr, "permanent address district") : "") || existing?.["Permanent Address District"] || "",
+      "Permanent State": state || (pr ? getProfVal(pr, "permanent state") : "") || existing?.["Permanent State"] || "",
+      "Permanent Address Pincode": existing?.["Permanent Address Pincode"] || "",
+      "Highest Qualification": (pr ? getProfVal(pr, "graduation degree name") : "") || existing?.["Highest Qualification"] || "",
+      "Graduation Degree Name": (pr ? getProfVal(pr, "graduation degree name") : "") || existing?.["Graduation Degree Name"] || "",
+      "Graduation Stream": (pr ? getProfVal(pr, "graduation stream") : "") || existing?.["Graduation Stream"] || "",
+      "Graduation College / University Name": (pr ? getProfVal(pr, "graduation college / university name") : "") || existing?.["Graduation College / University Name"] || "",
+      "Graduation Year of Passing": (pr ? getProfVal(pr, "graduation year of passing") : "") || existing?.["Graduation Year of Passing"] || "",
+      "Graduation CGPA ": (pr ? getProfVal(pr, "graduation cgpa / percentage obtained") : "") || existing?.["Graduation CGPA "] || "",
+      "Post-Graduation Degree Name": existing?.["Post-Graduation Degree Name"] || "",
+      "Post-Graduation Stream": existing?.["Post-Graduation Stream"] || "",
+      "Post-Graduation College / University Name": existing?.["Post-Graduation College / University Name"] || "",
+      "Post Graduation Year of Passing": existing?.["Post Graduation Year of Passing"] || "",
+      "Post Graduation CGPA / Percentage Obtained": existing?.["Post Graduation CGPA / Percentage Obtained"] || "",
+      "Placed Organisation": (pr ? getProfVal(pr, "placed organisation") : "") || existing?.["Placed Organisation"] || "",
+      "External Placed Organisation": (pr ? getProfVal(pr, "external placed organisation") : "") || existing?.["External Placed Organisation"] || "",
+      "Placement Type": (pr ? getProfVal(pr, "placed through") : "") || existing?.["Placement Type"] || "",
+      "Placed Month": existing?.["Placed Month"] || "",
+      "CTC(LPA)": existing?.["CTC(LPA)"] || "",
+      "Profile Photo": photo,
+      "Resume": resume,
+      "Instructor Name": (pr ? getProfVal(pr, "instructor name") : "") || existing?.["Instructor Name"] || "",
+      "Centre Name": centre || (pr ? getProfVal(pr, "centre name") : "") || existing?.["Centre Name"] || ""
+    };
+
     finalRecords.push(studentRow);
+  }
+
+  // Also include any profiles in profMap that may not be in enrollRows (if any)
+  for (let i = 1; i < profRows.length; i++) {
+    const pr = profRows[i];
+    if (!pr || pr.length <= 1) continue;
+    const idName = getProfVal(pr, "id - student name");
+    const m = idName.match(/\b(I\d{2}[A-Za-z]\d{3,4})\b/i);
+    const sid = m ? m[1].toUpperCase() : (idName.split("-")[0] || idName).trim().toUpperCase();
+    if (!sid || seenIds.has(sid)) continue;
+    seenIds.add(sid);
+
+    const st = getProfVal(pr, "active status") || "Active";
+    if (st.toLowerCase() === "active") totalActive++;
+    else if (st.toLowerCase() === "refunded") totalRefunded++;
+
+    finalRecords.push({
+      "Full Name": getProfVal(pr, "your full name"),
+      "User ID": getProfVal(pr, "instructor name") || sid,
+      "Student ID": sid,
+      "Mobile Number": getProfVal(pr, "register mobile number"),
+      "Active Status": st,
+      "Enrolled on": getProfVal(pr, "orientation day"),
+      "Batch Details": getProfVal(pr, "batch details"),
+      "Batch Timing": "9:00 AM - 1:00 PM",
+      "Gender": "",
+      "Preferred Job Track": getProfVal(pr, "graduation stream"),
+      "Your Personal Mail ID": getProfVal(pr, "your personal mail id"),
+      "Permanent Address District": getProfVal(pr, "permanent address district"),
+      "Permanent State": getProfVal(pr, "permanent state"),
+      "Permanent Address Pincode": "",
+      "Highest Qualification": getProfVal(pr, "graduation degree name"),
+      "Graduation Degree Name": getProfVal(pr, "graduation degree name"),
+      "Graduation Stream": getProfVal(pr, "graduation stream"),
+      "Graduation College / University Name": getProfVal(pr, "graduation college / university name"),
+      "Graduation Year of Passing": getProfVal(pr, "graduation year of passing"),
+      "Graduation CGPA ": getProfVal(pr, "graduation cgpa / percentage obtained"),
+      "Post-Graduation Degree Name": "",
+      "Post-Graduation Stream": "",
+      "Post-Graduation College / University Name": "",
+      "Post Graduation Year of Passing": "",
+      "Post Graduation CGPA / Percentage Obtained": "",
+      "Placed Organisation": getProfVal(pr, "placed organisation"),
+      "External Placed Organisation": getProfVal(pr, "external placed organisation"),
+      "Placement Type": getProfVal(pr, "placed through"),
+      "Placed Month": "",
+      "CTC(LPA)": "",
+      "Profile Photo": extractZohoPhotoUrl(getProfVal(pr, "profile photo")),
+      "Resume": extractZohoResumeUrl(getProfVal(pr, "your resume")),
+      "Instructor Name": getProfVal(pr, "instructor name"),
+      "Centre Name": getProfVal(pr, "centre name")
+    });
   }
 
   // Sort canonical CSV: sort by student ID
@@ -541,15 +636,6 @@ async function syncWithZohoLive(clientSyncTime?: string): Promise<{
     const idA = a["Student ID"] || "";
     const idB = b["Student ID"] || "";
     return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: "base" });
-  });
-
-  // Calculate live counts
-  let activeCount = 0;
-  let refundedCount = 0;
-  finalRecords.forEach(r => {
-    const st = (r["Active Status"] || "").toLowerCase();
-    if (st === "active") activeCount++;
-    if (st === "refunded") refundedCount++;
   });
 
   // Build the updated canonical CSV
@@ -566,28 +652,29 @@ async function syncWithZohoLive(clientSyncTime?: string): Promise<{
   await persistCsvDatasetAndCode(updatedCsv);
 
   const formattedDate = clientSyncTime || formatCurrentSyncDate(new Date());
-  const latestStudentName = getLiveVal(liveRows[1], "your full name") || getLiveVal(liveRows[1], "id - student name");
+  const latestStudentName = getEnrollVal(enrollRows[1], "full name") || getEnrollVal(enrollRows[1], "student id");
 
   const syncInfo = {
     lastSync: formattedDate,
     updatedAt: new Date().toISOString(),
-    source: "Zoho Creator Live Direct CSV",
+    source: "Zoho Creator Master Enrollments & Profiles Report",
     totalCount: finalRecords.length,
-    activeCount,
-    refundedCount,
+    activeCount: totalActive,
+    refundedCount: totalRefunded,
     newCount,
     updatedCount,
     latestStudent: latestStudentName
   };
 
   await fs.promises.writeFile(SYNC_INFO_FILE_PATH, JSON.stringify(syncInfo, null, 2), "utf8");
-  console.log(`[Zoho Sync Complete] Total: ${finalRecords.length}, Active: ${activeCount}, Refunded: ${refundedCount}, Updated: ${updatedCount}, New: ${newCount}, LastSync: ${formattedDate}`);
+  console.log(`[Zoho Sync Complete] Total: ${finalRecords.length}, Active: ${totalActive}, Refunded: ${totalRefunded}, Updated: ${updatedCount}, New: ${newCount}, LastSync: ${formattedDate}`);
 
   return {
     success: true,
     count: finalRecords.length,
-    activeCount,
-    refundedCount,
+    totalEnrolls: finalRecords.length,
+    activeCount: totalActive,
+    refundedCount: totalRefunded,
     newCount,
     updatedCount,
     lastSync: formattedDate,

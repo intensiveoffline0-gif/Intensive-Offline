@@ -172,7 +172,7 @@ export function parseStudentCSV(csvText: string): Student[] {
       userId: row["user id"] || "",
       studentId: row["student id"] || "",
       mobileNumber: row["mobile number"] || "",
-      activeStatus: row["active status"] || "",
+      activeStatus: (row["active status"] || "").trim().toLowerCase() === "refunded" ? "Refunded" : "Active",
       enrolledOn: row["enrolled on"] || "",
       batchDetails: row["batch details"] || "",
       gender: row["gender"] || "",
