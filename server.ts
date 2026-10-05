@@ -753,6 +753,28 @@ app.post(["/api/zoho/sync", "/api/zoho/live-sync"], async (req, res) => {
   }
 });
 
+// Proxy endpoint to stream Zoho Creator profile photos with proper caching & CORS headers
+app.get("/api/zoho/image", async (req, res) => {
+  try {
+    const rawUrl = req.query.url as string;
+    if (!rawUrl || !rawUrl.startsWith("https://creatorapp.zohopublic.in")) {
+      return res.status(400).send("Invalid image URL");
+    }
+    const upstream = await fetch(rawUrl);
+    if (!upstream.ok) {
+      return res.status(upstream.status).send("Failed to fetch image from Zoho");
+    }
+    const contentType = upstream.headers.get("content-type") || "image/jpeg";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+    const arr = await upstream.arrayBuffer();
+    return res.send(Buffer.from(arr));
+  } catch (err: any) {
+    console.error("Zoho image proxy error:", err);
+    return res.status(500).send("Internal server error proxying image");
+  }
+});
+
 // GET endpoint to fetch persisted logo if it exists
 app.get("/api/logo", async (req, res) => {
   try {

@@ -50,21 +50,29 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
         </div>
         
         <div className="flex items-center gap-4">
-          {student.profilePhoto ? (
-            <img 
-              src={student.profilePhoto} 
-              alt={student.fullName}
-              className="h-16 w-16 rounded-full object-cover border-2 border-white/20 shadow-inner bg-slate-800"
-              onError={(e) => {
-                // fallback to letter avatar if image URL fails to load
-                (e.target as HTMLElement).style.display = "none";
-              }}
-            />
-          ) : (
-            <div className="h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center font-extrabold text-2xl text-white shadow-inner">
+          <div className="relative h-16 w-16 shrink-0">
+            {student.profilePhoto ? (
+              <img 
+                src={student.profilePhoto} 
+                alt={student.fullName}
+                referrerPolicy="no-referrer"
+                className="h-16 w-16 rounded-full object-cover border-2 border-white/20 shadow-inner bg-slate-800"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  if (!target.src.includes("/api/zoho/image")) {
+                    target.src = `/api/zoho/image?url=${encodeURIComponent(student.profilePhoto!)}`;
+                  } else {
+                    target.style.display = "none";
+                    const fallback = target.nextElementSibling as HTMLElement;
+                    if (fallback) fallback.classList.remove("hidden");
+                  }
+                }}
+              />
+            ) : null}
+            <div className={`h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center font-extrabold text-2xl text-white shadow-inner ${student.profilePhoto ? "hidden" : ""}`}>
               {student.fullName.charAt(0)}
             </div>
-          )}
+          </div>
           <div>
             <h2 className="text-xl font-bold flex items-center gap-1.5">{student.fullName}</h2>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-slate-300">

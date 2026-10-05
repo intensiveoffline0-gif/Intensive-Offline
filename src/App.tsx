@@ -14,8 +14,9 @@ import { SearchableDropdown } from "./components/SearchableDropdown";
 import { 
   BarChart3, Users, ShieldAlert, Award, FileUp, 
   Search, SlidersHorizontal, Table, Download, User, 
-  ChevronRight, BrainCircuit, ExternalLink, HelpCircle,
-  MapPin, RefreshCw, RotateCcw, X
+  ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight,
+  BrainCircuit, ExternalLink, HelpCircle,
+  MapPin, RefreshCw, RotateCcw, X, Settings
 } from "lucide-react";
 
 const NxtWaveLogo = ({ 
@@ -203,6 +204,10 @@ export default function App() {
     return initial;
   });
   const [syncToast, setSyncToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Pagination for Students Details Tab (20 records per page)
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const PAGE_SIZE = 20;
 
   // Load persistent CSV, logo, and sync info from server upon mount
   useEffect(() => {
@@ -473,59 +478,285 @@ export default function App() {
     return students.find(s => s.studentId === selectedStudentId) || null;
   }, [students, selectedStudentId]);
  
-  // Derived lists for dropdown filters
+  // Generic Filter Matching Engine for Cascading/Faceted Filter Logic
+  const matchStudentWithFilters = (
+    s: Student, 
+    criteria: {
+      searchQuery?: string;
+      centre?: string;
+      college?: string;
+      district?: string;
+      state?: string;
+      placedStatus?: string;
+      track?: string;
+      batch?: string;
+      startDate?: Date | null;
+      endDate?: Date | null;
+    }
+  ): boolean => {
+    // 1. Text Search query
+    if (criteria.searchQuery && criteria.searchQuery.trim()) {
+      const q = criteria.searchQuery.toLowerCase().trim();
+      const matchSearch = 
+        (s.fullName || "").toLowerCase().includes(q) ||
+        (s.studentId || "").toLowerCase().includes(q) ||
+        (s.personalMailId || "").toLowerCase().includes(q);
+      if (!matchSearch) return false;
+    }
+
+    // 2. Centre Name
+    if (criteria.centre && criteria.centre !== "All") {
+      if ((s.centreName || "").trim().toUpperCase() !== criteria.centre.trim().toUpperCase()) {
+        return false;
+      }
+    }
+
+    // 3. College
+    if (criteria.college && criteria.college !== "All") {
+      if ((s.graduationCollegeName || "").trim().toLowerCase() !== criteria.college.trim().toLowerCase()) {
+        return false;
+      }
+    }
+
+    // 4. District
+    if (criteria.district && criteria.district !== "All") {
+      if ((s.district || "").trim().toLowerCase() !== criteria.district.trim().toLowerCase()) {
+        return false;
+      }
+    }
+
+    // 5. State
+    if (criteria.state && criteria.state !== "All") {
+      if ((s.state || "").trim().toLowerCase() !== criteria.state.trim().toLowerCase()) {
+        return false;
+      }
+    }
+
+    // 6. Placed Status
+    if (criteria.placedStatus && criteria.placedStatus !== "All") {
+      const hasNxtwave = !!s.placedOrganisation;
+      const hasExternal = !!s.externalPlacedOrganisation;
+      if (criteria.placedStatus === "Placed Through Nxtwave" && !hasNxtwave) return false;
+      if (criteria.placedStatus === "External Placed" && !hasExternal) return false;
+      if (criteria.placedStatus === "Yet To Place" && (hasNxtwave || hasExternal)) return false;
+    }
+
+    // 7. Preferred Track
+    if (criteria.track && criteria.track !== "All") {
+      if ((s.preferredJobTrack || "").trim() !== criteria.track.trim()) {
+        return false;
+      }
+    }
+
+    // 8. Batch Details
+    if (criteria.batch && criteria.batch !== "All") {
+      if ((s.batchDetails || "").trim().toUpperCase() !== criteria.batch.trim().toUpperCase()) {
+        return false;
+      }
+    }
+
+    // 9. Enrolled Date Range
+    if (criteria.startDate || criteria.endDate) {
+      const d = parseEnrollmentDate(s.enrolledOn);
+      if (!d) return false;
+      if (criteria.startDate) {
+        const startOfDay = new Date(criteria.startDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        if (d < startOfDay) return false;
+      }
+      if (criteria.endDate) {
+        const endOfDay = new Date(criteria.endDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        if (d > endOfDay) return false;
+      }
+    }
+
+    return true;
+  };
+
+  // 1. Cascading Student Subsets for each filter dropdown
+  const studentsForDistrict = useMemo(() => {
+    return students.filter(s => matchStudentWithFilters(s, {
+      searchQuery,
+      centre: filterCentre,
+      college: filterCollege,
+      state: filterState,
+      placedStatus: filterPlacedStatus,
+      track: filterTrack,
+      batch: filterBatch,
+      startDate: filterStartDate,
+      endDate: filterEndDate
+    }));
+  }, [students, searchQuery, filterCentre, filterCollege, filterState, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+
+  const studentsForState = useMemo(() => {
+    return students.filter(s => matchStudentWithFilters(s, {
+      searchQuery,
+      centre: filterCentre,
+      college: filterCollege,
+      district: filterDistrict,
+      placedStatus: filterPlacedStatus,
+      track: filterTrack,
+      batch: filterBatch,
+      startDate: filterStartDate,
+      endDate: filterEndDate
+    }));
+  }, [students, searchQuery, filterCentre, filterCollege, filterDistrict, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+
+  const studentsForCollege = useMemo(() => {
+    return students.filter(s => matchStudentWithFilters(s, {
+      searchQuery,
+      centre: filterCentre,
+      district: filterDistrict,
+      state: filterState,
+      placedStatus: filterPlacedStatus,
+      track: filterTrack,
+      batch: filterBatch,
+      startDate: filterStartDate,
+      endDate: filterEndDate
+    }));
+  }, [students, searchQuery, filterCentre, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+
+  const studentsForCentre = useMemo(() => {
+    return students.filter(s => matchStudentWithFilters(s, {
+      searchQuery,
+      college: filterCollege,
+      district: filterDistrict,
+      state: filterState,
+      placedStatus: filterPlacedStatus,
+      track: filterTrack,
+      batch: filterBatch,
+      startDate: filterStartDate,
+      endDate: filterEndDate
+    }));
+  }, [students, searchQuery, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+
+  const studentsForBatch = useMemo(() => {
+    return students.filter(s => matchStudentWithFilters(s, {
+      searchQuery,
+      centre: filterCentre,
+      college: filterCollege,
+      district: filterDistrict,
+      state: filterState,
+      placedStatus: filterPlacedStatus,
+      track: filterTrack,
+      startDate: filterStartDate,
+      endDate: filterEndDate
+    }));
+  }, [students, searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterStartDate, filterEndDate]);
+
+  const studentsForTrack = useMemo(() => {
+    return students.filter(s => matchStudentWithFilters(s, {
+      searchQuery,
+      centre: filterCentre,
+      college: filterCollege,
+      district: filterDistrict,
+      state: filterState,
+      placedStatus: filterPlacedStatus,
+      batch: filterBatch,
+      startDate: filterStartDate,
+      endDate: filterEndDate
+    }));
+  }, [students, searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterBatch, filterStartDate, filterEndDate]);
+
+  const studentsForPlacedStatus = useMemo(() => {
+    return students.filter(s => matchStudentWithFilters(s, {
+      searchQuery,
+      centre: filterCentre,
+      college: filterCollege,
+      district: filterDistrict,
+      state: filterState,
+      track: filterTrack,
+      batch: filterBatch,
+      startDate: filterStartDate,
+      endDate: filterEndDate
+    }));
+  }, [students, searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+
+  // 2. Cascading Derived Lists and Option Counts for Dropdowns
+  const districtsList = useMemo(() => {
+    const list = new Set<string>();
+    studentsForDistrict.forEach(s => {
+      if (s.district && s.district.trim()) list.add(s.district.trim());
+    });
+    return Array.from(list).sort();
+  }, [studentsForDistrict]);
+
+  const districtCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    studentsForDistrict.forEach(s => {
+      if (s.district && s.district.trim()) {
+        const val = s.district.trim();
+        counts[val] = (counts[val] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [studentsForDistrict]);
+
+  const statesList = useMemo(() => {
+    const list = new Set<string>();
+    studentsForState.forEach(s => {
+      if (s.state && s.state.trim()) list.add(s.state.trim());
+    });
+    return Array.from(list).sort();
+  }, [studentsForState]);
+
+  const stateCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    studentsForState.forEach(s => {
+      if (s.state && s.state.trim()) {
+        const val = s.state.trim();
+        counts[val] = (counts[val] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [studentsForState]);
+
+  const collegesList = useMemo(() => {
+    const list = new Set<string>();
+    studentsForCollege.forEach(s => {
+      if (s.graduationCollegeName && s.graduationCollegeName.trim()) {
+        list.add(s.graduationCollegeName.trim());
+      }
+    });
+    return Array.from(list).sort();
+  }, [studentsForCollege]);
+
+  const collegeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    studentsForCollege.forEach(s => {
+      if (s.graduationCollegeName && s.graduationCollegeName.trim()) {
+        const val = s.graduationCollegeName.trim();
+        counts[val] = (counts[val] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [studentsForCollege]);
+
   const centresList = useMemo(() => {
     const list = new Set<string>();
-    students.forEach(s => {
+    studentsForCentre.forEach(s => {
       if (s.centreName && s.centreName.trim()) {
         list.add(s.centreName.trim());
       }
     });
     return Array.from(list).sort();
-  }, [students]);
+  }, [studentsForCentre]);
 
-  const collegesList = useMemo(() => {
-    const list = new Set<string>();
-    students.forEach(s => {
-      if (s.graduationCollegeName) list.add(s.graduationCollegeName.trim());
+  const centreCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    studentsForCentre.forEach(s => {
+      if (s.centreName && s.centreName.trim()) {
+        const val = s.centreName.trim();
+        counts[val] = (counts[val] || 0) + 1;
+      }
     });
-    return Array.from(list).sort();
-  }, [students]);
- 
-  const districtsList = useMemo(() => {
-    const list = new Set<string>();
-    students.forEach(s => {
-      if (s.district) list.add(s.district.trim());
-    });
-    return Array.from(list).sort();
-  }, [students]);
- 
-  const statesList = useMemo(() => {
-    const list = new Set<string>();
-    students.forEach(s => {
-      if (s.state) list.add(s.state.trim());
-    });
-    return Array.from(list).sort();
-  }, [students]);
- 
-  const placedStatusList = [
-    "Placed Through Nxtwave",
-    "External Placed",
-    "Yet To Place"
-  ];
- 
-  // Preferred tracks
-  const tracksList = useMemo(() => {
-    const list = new Set<string>();
-    students.forEach(s => {
-      if (s.preferredJobTrack) list.add(s.preferredJobTrack);
-    });
-    return Array.from(list).sort();
-  }, [students]);
+    return counts;
+  }, [studentsForCentre]);
 
   const batchesList = useMemo(() => {
     const list = new Set<string>();
-    students.forEach(s => {
+    studentsForBatch.forEach(s => {
       if (s.batchDetails && s.batchDetails.trim()) {
         list.add(s.batchDetails.trim().toUpperCase());
       }
@@ -549,80 +780,45 @@ export default function App() {
       }
       return a.localeCompare(b);
     });
-  }, [students]);
-
-  // Counts for Dropdowns to view in-bucket volume easily
-  const centreCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    students.forEach(s => {
-      if (s.centreName && s.centreName.trim()) {
-        const val = s.centreName.trim();
-        counts[val] = (counts[val] || 0) + 1;
-      }
-    });
-    return counts;
-  }, [students]);
-
-  const collegeCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    students.forEach(s => {
-      if (s.graduationCollegeName) {
-        const val = s.graduationCollegeName.trim();
-        counts[val] = (counts[val] || 0) + 1;
-      }
-    });
-    return counts;
-  }, [students]);
-
-  const districtCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    students.forEach(s => {
-      if (s.district) {
-        const val = s.district.trim();
-        counts[val] = (counts[val] || 0) + 1;
-      }
-    });
-    return counts;
-  }, [students]);
-
-  const stateCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    students.forEach(s => {
-      if (s.state) {
-        const val = s.state.trim();
-        counts[val] = (counts[val] || 0) + 1;
-      }
-    });
-    return counts;
-  }, [students]);
-
-  const trackCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    students.forEach(s => {
-      if (s.preferredJobTrack) {
-        const val = s.preferredJobTrack.trim();
-        counts[val] = (counts[val] || 0) + 1;
-      }
-    });
-    return counts;
-  }, [students]);
+  }, [studentsForBatch]);
 
   const batchCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    students.forEach(s => {
+    studentsForBatch.forEach(s => {
       if (s.batchDetails && s.batchDetails.trim()) {
         const val = s.batchDetails.trim().toUpperCase();
         counts[val] = (counts[val] || 0) + 1;
       }
     });
     return counts;
-  }, [students]);
+  }, [studentsForBatch]);
+
+  const tracksList = useMemo(() => {
+    const list = new Set<string>();
+    studentsForTrack.forEach(s => {
+      if (s.preferredJobTrack && s.preferredJobTrack.trim()) {
+        list.add(s.preferredJobTrack.trim());
+      }
+    });
+    return Array.from(list).sort();
+  }, [studentsForTrack]);
+
+  const trackCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    studentsForTrack.forEach(s => {
+      if (s.preferredJobTrack && s.preferredJobTrack.trim()) {
+        const val = s.preferredJobTrack.trim();
+        counts[val] = (counts[val] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [studentsForTrack]);
 
   const placedStatusCounts = useMemo(() => {
     let nxtwave = 0;
     let external = 0;
     let yetToPlace = 0;
-    students.forEach(s => {
+    studentsForPlacedStatus.forEach(s => {
       const hasNxtwave = !!s.placedOrganisation;
       const hasExternal = !!s.externalPlacedOrganisation;
       if (hasNxtwave) {
@@ -638,75 +834,91 @@ export default function App() {
       "External Placed": external,
       "Yet To Place": yetToPlace
     };
-  }, [students]);
+  }, [studentsForPlacedStatus]);
 
-  // Filtering Logic
+  const placedStatusList = useMemo(() => {
+    const base = [
+      "Placed Through Nxtwave",
+      "External Placed",
+      "Yet To Place"
+    ];
+    return base.filter(status => (placedStatusCounts[status as keyof typeof placedStatusCounts] || 0) > 0);
+  }, [placedStatusCounts]);
+
+  // 3. Cascading Auto-Reset: If active selection no longer exists in refined options, reset to "All"
+  useEffect(() => {
+    if (filterDistrict !== "All" && !districtsList.includes(filterDistrict)) {
+      setFilterDistrict("All");
+    }
+  }, [districtsList, filterDistrict]);
+
+  useEffect(() => {
+    if (filterCollege !== "All" && !collegesList.includes(filterCollege)) {
+      setFilterCollege("All");
+    }
+  }, [collegesList, filterCollege]);
+
+  useEffect(() => {
+    if (filterCentre !== "All" && !centresList.includes(filterCentre)) {
+      setFilterCentre("All");
+    }
+  }, [centresList, filterCentre]);
+
+  useEffect(() => {
+    if (filterState !== "All" && !statesList.includes(filterState)) {
+      setFilterState("All");
+    }
+  }, [statesList, filterState]);
+
+  useEffect(() => {
+    if (filterBatch !== "All" && !batchesList.includes(filterBatch)) {
+      setFilterBatch("All");
+    }
+  }, [batchesList, filterBatch]);
+
+  useEffect(() => {
+    if (filterTrack !== "All" && !tracksList.includes(filterTrack)) {
+      setFilterTrack("All");
+    }
+  }, [tracksList, filterTrack]);
+
+  useEffect(() => {
+    if (filterPlacedStatus !== "All" && !placedStatusList.includes(filterPlacedStatus)) {
+      setFilterPlacedStatus("All");
+    }
+  }, [placedStatusList, filterPlacedStatus]);
+
+  // 4. Master Filtered Students List
   const filteredStudents = useMemo(() => {
-    return students.filter(s => {
-      const matchSearch = 
-        s.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.studentId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.personalMailId.toLowerCase().includes(searchQuery.toLowerCase());
-      
-      const matchCentre = filterCentre === "All" || (s.centreName || "").trim().toUpperCase() === filterCentre.trim().toUpperCase();
-      const matchCollege = filterCollege === "All" || s.graduationCollegeName === filterCollege;
-      const matchDistrict = filterDistrict === "All" || s.district === filterDistrict;
-      const matchState = filterState === "All" || s.state === filterState;
-      
-      let matchPlacedStatus = true;
-      if (filterPlacedStatus !== "All") {
-        const hasNxtwave = !!s.placedOrganisation;
-        const hasExternal = !!s.externalPlacedOrganisation;
-        if (filterPlacedStatus === "Placed Through Nxtwave") {
-          matchPlacedStatus = hasNxtwave;
-        } else if (filterPlacedStatus === "External Placed") {
-          matchPlacedStatus = hasExternal;
-        } else if (filterPlacedStatus === "Yet To Place") {
-          matchPlacedStatus = !hasNxtwave && !hasExternal;
-        }
-      }
+    return students.filter(s => matchStudentWithFilters(s, {
+      searchQuery,
+      centre: filterCentre,
+      college: filterCollege,
+      district: filterDistrict,
+      state: filterState,
+      placedStatus: filterPlacedStatus,
+      track: filterTrack,
+      batch: filterBatch,
+      startDate: filterStartDate,
+      endDate: filterEndDate
+    }));
+  }, [students, searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
 
-      const matchTrack = filterTrack === "All" || s.preferredJobTrack === filterTrack;
-      const matchBatch = filterBatch === "All" || (s.batchDetails && s.batchDetails.trim().toUpperCase() === filterBatch.toUpperCase());
-
-      let matchDate = true;
-      if (filterStartDate || filterEndDate) {
-        const d = parseEnrollmentDate(s.enrolledOn);
-        if (d) {
-          if (filterStartDate) {
-            const startOfDay = new Date(filterStartDate);
-            startOfDay.setHours(0, 0, 0, 0);
-            if (d < startOfDay) matchDate = false;
-          }
-          if (filterEndDate) {
-            const endOfDay = new Date(filterEndDate);
-            endOfDay.setHours(23, 59, 59, 999);
-            if (d > endOfDay) matchDate = false;
-          }
-        } else {
-          matchDate = false;
-        }
-      }
-
-      return matchSearch && matchCentre && matchCollege && matchDistrict && matchState && matchPlacedStatus && matchTrack && matchDate && matchBatch;
-    });
-  }, [students, searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterStartDate, filterEndDate, filterBatch]);
-
-  // Aggregate Core Metrics (KPIs)
+  // Aggregate Core Metrics (KPIs) - dynamically reflects active filters
   const stats = useMemo(() => {
-    const total = students.length;
+    const total = filteredStudents.length;
     // Refunded learners
-    const refunded = students.filter(s => s.activeStatus?.toLowerCase() === "refunded").length;
-    // Active Learners includes all non-refunded enrolled learners (1,725 Active + 1 Changed Program = 1,726)
+    const refunded = filteredStudents.filter(s => s.activeStatus?.toLowerCase() === "refunded").length;
+    // Active Learners includes all non-refunded enrolled learners (Active + Changed Program)
     const active = Math.max(0, total - refunded);
     
     // Placed count calculation
-    const placed = students.filter(s => !!(s.placedOrganisation || s.externalPlacedOrganisation)).length;
+    const placed = filteredStudents.filter(s => !!(s.placedOrganisation || s.externalPlacedOrganisation)).length;
     const placementRate = total > 0 ? parseFloat(((placed / total) * 100).toFixed(1)) : 0;
 
     // Highest Package parsed
     let maxCtc = 0;
-    students.forEach(s => {
+    filteredStudents.forEach(s => {
       const ctcStr = s.ctcLpa ? String(s.ctcLpa).toLowerCase().trim() : "";
       if (ctcStr) {
         // Extract numeric digits
@@ -726,7 +938,7 @@ export default function App() {
       placementRate,
       highestCtc: maxCtc > 0 ? `${maxCtc} LPA` : "6.0 LPA"
     };
-  }, [students]);
+  }, [filteredStudents]);
 
   // Download Filtered Registry list as custom standard HTML-to-CSV Downloader File
   // Safe encoding wrapper to prevent breakage with URI Special chars
@@ -756,6 +968,20 @@ export default function App() {
   };
 
   const filteredRegistryStudents = filteredStudents;
+
+  // Reset pagination to page 1 whenever any filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+
+  const totalRegistryRecords = filteredRegistryStudents.length;
+  const totalRegistryPages = Math.max(1, Math.ceil(totalRegistryRecords / PAGE_SIZE));
+  const validCurrentPage = Math.min(Math.max(1, currentPage), totalRegistryPages);
+
+  const paginatedRegistryStudents = useMemo(() => {
+    const start = (validCurrentPage - 1) * PAGE_SIZE;
+    return filteredRegistryStudents.slice(start, start + PAGE_SIZE);
+  }, [filteredRegistryStudents, validCurrentPage]);
 
   if (isLoadingCSV) {
     return (
@@ -886,6 +1112,21 @@ export default function App() {
                 <span>Latest sync: <span className="font-semibold text-slate-700">{lastSyncDate}</span></span>
               </div>
             </div>
+
+            {/* Admin Settings Button (Right side of the Sync button) */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("loader")}
+              className={`inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                activeTab === "loader"
+                  ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-md ring-2 ring-indigo-500"
+                  : "bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700"
+              }`}
+              title="Admin Settings & Zoho Database Reports"
+            >
+              <Settings className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
+              <span>Admin Settings</span>
+            </button>
           </div>
 
         </div>
@@ -958,17 +1199,6 @@ export default function App() {
             >
               Sales Co-pilot
             </button>
-
-            <button
-              onClick={() => setActiveTab("loader")}
-              className={`px-6 py-1.5 rounded-full text-sm font-medium transition-all ${
-                activeTab === "loader" 
-                  ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs" 
-                  : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-              }`}
-            >
-              CSV Data Portal
-            </button>
           </nav>
 
           <div className="flex items-center gap-2">
@@ -981,32 +1211,8 @@ export default function App() {
 
         {/* PAGE 1: CAMPUS DASHBOARD */}
         {activeTab === "dashboard" && (
-          <div className="space-y-8 animate-fadeIn">
-            {/* KPI Cards Area */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <MetricCard 
-                title="Total Enrolls" 
-                value={stats.total} 
-                icon={<Users className="h-5 w-5" />} 
-                subtitle="Master Enrollments Report count"
-              />
-              <MetricCard 
-                title="Active Learners" 
-                value={stats.active} 
-                icon={<Users className="h-5 w-5 text-emerald-500" />} 
-                subtitle={`${stats.refunded} refunded learners excluded`}
-                trend={{ value: `${((stats.active/stats.total)*100).toFixed(1)}% Active`, isPositive: true }}
-              />
-              <MetricCard 
-                title="Refunds Count" 
-                value={stats.refunded} 
-                icon={<ShieldAlert className="h-5 w-5 text-rose-500" />} 
-                subtitle="Includes early refunds before profile submission"
-                trend={{ value: `${((stats.refunded/stats.total)*100).toFixed(1)}% Refunded`, isPositive: false }}
-              />
-            </div>
-
-            {/* Quick Filters Area */}
+          <div className="space-y-6 animate-fadeIn">
+            {/* Search Filters Area (Top of Campus Dashboard) */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm flex flex-wrap gap-4 items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <SlidersHorizontal className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" />
@@ -1063,7 +1269,7 @@ export default function App() {
                   value={filterCentre}
                   onChange={setFilterCentre}
                   counts={centreCounts}
-                  totalCount={students.length}
+                  totalCount={studentsForCentre.length}
                   placeholder="-Select Centre Name-"
                 />
 
@@ -1073,7 +1279,7 @@ export default function App() {
                   value={filterCollege}
                   onChange={setFilterCollege}
                   counts={collegeCounts}
-                  totalCount={students.length}
+                  totalCount={studentsForCollege.length}
                   placeholder="-Select College-"
                 />
 
@@ -1083,7 +1289,7 @@ export default function App() {
                   value={filterDistrict}
                   onChange={setFilterDistrict}
                   counts={districtCounts}
-                  totalCount={students.length}
+                  totalCount={studentsForDistrict.length}
                   placeholder="-Select District-"
                 />
 
@@ -1093,7 +1299,7 @@ export default function App() {
                   value={filterState}
                   onChange={setFilterState}
                   counts={stateCounts}
-                  totalCount={students.length}
+                  totalCount={studentsForState.length}
                   placeholder="-Select State-"
                 />
 
@@ -1103,7 +1309,7 @@ export default function App() {
                   value={filterPlacedStatus}
                   onChange={setFilterPlacedStatus}
                   counts={placedStatusCounts}
-                  totalCount={students.length}
+                  totalCount={studentsForPlacedStatus.length}
                   placeholder="-Select Placed Status-"
                 />
 
@@ -1113,7 +1319,7 @@ export default function App() {
                   value={filterTrack}
                   onChange={setFilterTrack}
                   counts={trackCounts}
-                  totalCount={students.length}
+                  totalCount={studentsForTrack.length}
                   placeholder="-Select Job Track-"
                   optionFormatter={(track) => track.replace(/_/g, " ")}
                 />
@@ -1129,6 +1335,30 @@ export default function App() {
                   </button>
                 )}
               </div>
+            </div>
+
+            {/* KPI Cards Area (Directly reflects current active filters) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <MetricCard 
+                title="Total Enrolls" 
+                value={stats.total} 
+                icon={<Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />} 
+                subtitle={hasActiveFilters ? `Filtered out of ${students.length} total enrollments` : "Master Enrollments Report count"}
+              />
+              <MetricCard 
+                title="Active Learners" 
+                value={stats.active} 
+                icon={<Users className="h-5 w-5 text-emerald-500" />} 
+                subtitle={`${stats.refunded} refunded learners excluded`}
+                trend={{ value: stats.total > 0 ? `${((stats.active/stats.total)*100).toFixed(1)}% Active` : "0% Active", isPositive: true }}
+              />
+              <MetricCard 
+                title="Refunds Count" 
+                value={stats.refunded} 
+                icon={<ShieldAlert className="h-5 w-5 text-rose-500" />} 
+                subtitle={hasActiveFilters ? "Refunded learners matching current filters" : "Includes early refunds before profile submission"}
+                trend={{ value: stats.total > 0 ? `${((stats.refunded/stats.total)*100).toFixed(1)}% Refunded` : "0% Refunded", isPositive: false }}
+              />
             </div>
 
             {/* Recharts Analytics distribution graph visualizations */}
@@ -1186,7 +1416,7 @@ export default function App() {
                 value={filterCentre}
                 onChange={setFilterCentre}
                 counts={centreCounts}
-                totalCount={students.length}
+                totalCount={studentsForCentre.length}
                 placeholder="-Select Centre Name-"
               />
 
@@ -1196,7 +1426,7 @@ export default function App() {
                 value={filterCollege}
                 onChange={setFilterCollege}
                 counts={collegeCounts}
-                totalCount={students.length}
+                totalCount={studentsForCollege.length}
                 placeholder="-Select College-"
               />
 
@@ -1206,7 +1436,7 @@ export default function App() {
                 value={filterDistrict}
                 onChange={setFilterDistrict}
                 counts={districtCounts}
-                totalCount={students.length}
+                totalCount={studentsForDistrict.length}
                 placeholder="-Select District-"
               />
 
@@ -1216,7 +1446,7 @@ export default function App() {
                 value={filterState}
                 onChange={setFilterState}
                 counts={stateCounts}
-                totalCount={students.length}
+                totalCount={studentsForState.length}
                 placeholder="-Select State-"
               />
 
@@ -1226,7 +1456,7 @@ export default function App() {
                 value={filterPlacedStatus}
                 onChange={setFilterPlacedStatus}
                 counts={placedStatusCounts}
-                totalCount={students.length}
+                totalCount={studentsForPlacedStatus.length}
                 placeholder="-Select Placed Status-"
               />
 
@@ -1236,7 +1466,7 @@ export default function App() {
                 value={filterBatch}
                 onChange={setFilterBatch}
                 counts={batchCounts}
-                totalCount={students.length}
+                totalCount={studentsForBatch.length}
                 placeholder="-Select Batch-"
               />
 
@@ -1270,8 +1500,8 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-300">
-                    {filteredRegistryStudents.length > 0 ? (
-                      filteredRegistryStudents.map(student => (
+                    {paginatedRegistryStudents.length > 0 ? (
+                      paginatedRegistryStudents.map(student => (
                         <tr
                           key={student.studentId}
                           onClick={() => {
@@ -1280,11 +1510,31 @@ export default function App() {
                           }}
                           className="hover:bg-blue-50/30 dark:hover:bg-blue-950/20 cursor-pointer transition-colors"
                         >
-                          <td className="py-3 px-4 text-slate-900 dark:text-slate-100 font-bold flex items-center gap-2">
-                            <div className="h-6 w-6 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-[10px] text-slate-655 dark:text-slate-350">
-                              {student.fullName.charAt(0)}
+                          <td className="py-3 px-4 text-slate-900 dark:text-slate-100 font-bold flex items-center gap-2.5">
+                            <div className="relative h-7 w-7 shrink-0">
+                              {student.profilePhoto ? (
+                                <img
+                                  src={student.profilePhoto}
+                                  alt={student.fullName}
+                                  referrerPolicy="no-referrer"
+                                  className="h-7 w-7 rounded-full object-cover border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800"
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    if (!target.src.includes("/api/zoho/image")) {
+                                      target.src = `/api/zoho/image?url=${encodeURIComponent(student.profilePhoto!)}`;
+                                    } else {
+                                      target.style.display = "none";
+                                      const fallback = target.nextElementSibling as HTMLElement;
+                                      if (fallback) fallback.classList.remove("hidden");
+                                    }
+                                  }}
+                                />
+                              ) : null}
+                              <div className={`h-7 w-7 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-[10px] text-slate-655 dark:text-slate-350 border border-slate-200 dark:border-slate-700 ${student.profilePhoto ? "hidden" : ""}`}>
+                                {student.fullName.charAt(0)}
+                              </div>
                             </div>
-                            {student.fullName}
+                            <span className="truncate">{student.fullName}</span>
                           </td>
                           <td className="py-3 px-4 font-mono font-semibold text-blue-600 dark:text-blue-400">{student.studentId}</td>
                           <td className="py-3 px-4 text-slate-600 dark:text-slate-450">{student.batchDetails || "—"}</td>
@@ -1316,6 +1566,107 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
+
+              {/* 20-Records-Per-Page Pagination Toolbar */}
+              {totalRegistryRecords > 0 && (
+                <div className="bg-slate-50/70 dark:bg-slate-800/50 px-4 py-3 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                  <div className="text-slate-500 dark:text-slate-400 font-medium">
+                    Showing <span className="font-bold text-slate-800 dark:text-slate-200">{(validCurrentPage - 1) * PAGE_SIZE + 1}</span> to{" "}
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {Math.min(validCurrentPage * PAGE_SIZE, totalRegistryRecords)}
+                    </span>{" "}
+                    of <span className="font-bold text-slate-800 dark:text-slate-200">{totalRegistryRecords}</span> students (Page {validCurrentPage} of {totalRegistryPages})
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                    {/* First Page Button */}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(1)}
+                      disabled={validCurrentPage === 1}
+                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-750 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                      title="First Page"
+                    >
+                      <ChevronsLeft className="h-4 w-4" />
+                    </button>
+
+                    {/* Previous Page Button */}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={validCurrentPage === 1}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-750 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors font-semibold"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      <span>Previous</span>
+                    </button>
+
+                    {/* Page Numbers */}
+                    <div className="flex items-center gap-1">
+                      {(() => {
+                        const pages: (number | string)[] = [];
+                        if (totalRegistryPages <= 7) {
+                          for (let i = 1; i <= totalRegistryPages; i++) pages.push(i);
+                        } else {
+                          if (validCurrentPage <= 4) {
+                            pages.push(1, 2, 3, 4, 5, "...", totalRegistryPages);
+                          } else if (validCurrentPage >= totalRegistryPages - 3) {
+                            pages.push(1, "...", totalRegistryPages - 4, totalRegistryPages - 3, totalRegistryPages - 2, totalRegistryPages - 1, totalRegistryPages);
+                          } else {
+                            pages.push(1, "...", validCurrentPage - 1, validCurrentPage, validCurrentPage + 1, "...", totalRegistryPages);
+                          }
+                        }
+                        return pages.map((page, idx) => {
+                          if (typeof page === "string") {
+                            return (
+                              <span key={`ellipsis-${idx}`} className="px-1 text-slate-400 select-none">
+                                ...
+                              </span>
+                            );
+                          }
+                          const isCurrent = page === validCurrentPage;
+                          return (
+                            <button
+                              key={page}
+                              type="button"
+                              onClick={() => setCurrentPage(page)}
+                              className={`min-w-[30px] h-7 px-2 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
+                                isCurrent
+                                  ? "bg-blue-600 text-white shadow-xs"
+                                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          );
+                        });
+                      })()}
+                    </div>
+
+                    {/* Next Page Button */}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(p => Math.min(totalRegistryPages, p + 1))}
+                      disabled={validCurrentPage === totalRegistryPages}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-750 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors font-semibold"
+                    >
+                      <span>Next</span>
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+
+                    {/* Last Page Button */}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(totalRegistryPages)}
+                      disabled={validCurrentPage === totalRegistryPages}
+                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-750 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                      title="Last Page"
+                    >
+                      <ChevronsRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1374,13 +1725,16 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB: CSV PORTAL SHEET IMPORT */}
+        {/* TAB: ADMIN SETTINGS & ZOHO DATABASE MANAGEMENT */}
         {isAdmin && activeTab === "loader" && (
           <div className="space-y-6 animate-fadeIn">
             {/* Top Description bar */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm">
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Administrator Setup & Database Management</h3>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Customize your agency branding and manage student database memory profiles dynamically.</p>
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <Settings className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                Admin Settings: Database & Brand Management
+              </h3>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Customize your agency branding and inspect the two connected Zoho Creator database reports used as the main database.</p>
             </div>
 
             {/* Admin Grid: Logo Customization + CSV database */}

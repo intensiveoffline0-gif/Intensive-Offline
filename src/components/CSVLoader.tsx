@@ -1,7 +1,7 @@
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { parseStudentCSV } from "../data/csvParser";
 import { Student } from "../types";
-import { UploadCloud, FileSpreadsheet, CheckCircle, Info, RefreshCw, ExternalLink, Database } from "lucide-react";
+import { Settings, CheckCircle, Info, RefreshCw, ExternalLink, Database, FileSpreadsheet, ShieldCheck, ArrowUpRight } from "lucide-react";
 import { ZOHO_STUDENTS_CSV } from "../data/zohoStudentsCSV";
 
 interface CSVLoaderProps {
@@ -11,21 +11,9 @@ interface CSVLoaderProps {
 }
 
 export function CSVLoader({ onDataLoaded, currentCount, lastSyncDate }: CSVLoaderProps) {
-  const [dragActive, setDragActive] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  };
 
   const handleSyncZohoDirect = async () => {
     setIsProcessing(true);
@@ -64,7 +52,7 @@ export function CSVLoader({ onDataLoaded, currentCount, lastSyncDate }: CSVLoade
           return;
         }
       }
-      // Resilient fallback to bundled snapshot if network fails
+      // Resilient fallback
       const parsed = parseStudentCSV(ZOHO_STUDENTS_CSV);
       await onDataLoaded(parsed, ZOHO_STUDENTS_CSV, true);
       setSuccessMsg(`Successfully synced student dataset! Loaded ${parsed.length} student profiles.`);
@@ -75,207 +63,193 @@ export function CSVLoader({ onDataLoaded, currentCount, lastSyncDate }: CSVLoade
     }
   };
 
-  const processFile = (file: File) => {
-    if (!file.name.endsWith(".csv")) {
-      setErrorMsg("Invalid file format. Please select an official student registration CSV file.");
-      setSuccessMsg(null);
-      return;
-    }
-
-    setIsProcessing(true);
-    setSuccessMsg(null);
-    setErrorMsg(null);
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const text = e.target?.result as string;
-        if (!text) throw new Error("Could not read empty file.");
-        
-        const parsed = parseStudentCSV(text);
-        if (parsed.length === 0) {
-          throw new Error("No student records recognized. Ensure columns correspond to student registry standards.");
-        }
-        
-        await onDataLoaded(parsed, text);
-        setSuccessMsg(`Successfully imported and saved student database! Parsed ${parsed.length} student profiles and persisted them securely on the server.`);
-        setErrorMsg(null);
-      } catch (err: any) {
-        setErrorMsg(err.message || "An issue occurred while parsing or saving the CSV. Recheck formatting columns.");
-        setSuccessMsg(null);
-      } finally {
-        setIsProcessing(false);
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
-    }
-  };
-
-  const triggerFileInput = () => {
-    fileInputRef.current?.click();
-  };
-
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm max-w-4xl mx-auto">
-      <div className="flex items-center justify-between pb-4 border-b border-slate-200 mb-6">
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-200 dark:border-slate-800 gap-3">
         <div>
-          <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-            <FileSpreadsheet className="h-5 w-5 text-blue-600" />
-            CSV Data Portal
+          <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <Settings className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+            Admin Settings: Zoho Database Management
           </h3>
-          <p className="text-xs text-slate-400">Upload and persist student enrollments across system reloads.</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+            Two connected Zoho Creator reports powering the live student dataset across all modules.
+          </p>
         </div>
-        <div className="text-xs bg-blue-55/20 text-blue-700 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-          <RefreshCw className={`h-3.5 w-3.5 text-blue-600 ${isProcessing ? "animate-spin" : ""}`} style={{ animationDuration: isProcessing ? "1s" : "10s" }} />
-          {currentCount} Student Profiles Persisted
+        <div className="text-xs bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 self-start sm:self-auto border border-indigo-100 dark:border-indigo-900/40">
+          <Database className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+          <span>{currentCount} Profiles Loaded</span>
         </div>
       </div>
 
-      {/* Zoho Creator Public Report Direct Sync Banner */}
-      <div className="mb-6 p-4 rounded-xl border border-indigo-200 bg-indigo-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="p-2 bg-indigo-600 text-white rounded-lg shrink-0 mt-0.5 shadow-xs">
-            <Database className="h-5 w-5" />
+      {/* Main Zoho Live Sync Banner */}
+      <div className="p-5 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-gradient-to-r from-indigo-50/80 via-blue-50/40 to-slate-50 dark:from-indigo-950/30 dark:to-slate-900 flex flex-col md:flex-row md:items-center justify-between gap-5">
+        <div className="flex items-start gap-3.5">
+          <div className="p-2.5 bg-indigo-600 text-white rounded-xl shrink-0 mt-0.5 shadow-xs">
+            <RefreshCw className={`h-5 w-5 ${isProcessing ? "animate-spin" : ""}`} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-sm text-slate-900">Zoho Creator Live Report Sync</span>
-              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
-                Active Source
+              <span className="font-bold text-sm text-slate-900 dark:text-slate-100">Live Zoho Database Synchronization</span>
+              <span className="bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">
+                Live Source
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Sync directly from <code className="text-[11px] font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200 text-indigo-700">Student_Profiles_AI_Studio</code> report.
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+              Fetches and merges the latest records directly from both Zoho Creator reports in real time.
             </p>
             {lastSyncDate && (
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium mt-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-                <span>Latest sync: <span className="font-semibold text-slate-700">{lastSyncDate}</span></span>
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400 font-medium mt-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse"></span>
+                <span>Latest Synchronization: <span className="font-bold text-slate-800 dark:text-slate-200">{lastSyncDate}</span></span>
               </div>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <a
-            href="https://creatorapp.zohopublic.in/nxtwave/intensive-offline/report-perma/Student_Profiles_AI_Studio/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0?=csv"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-xs transition-colors"
-          >
-            <span>Open Zoho</span>
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
-
-          <button
-            type="button"
-            onClick={handleSyncZohoDirect}
-            disabled={isProcessing}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isProcessing ? "animate-spin" : ""}`} />
-            <span>Sync from Zoho</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Drag & Drop Area */}
-      <div
-        onDragEnter={isProcessing ? undefined : handleDrag}
-        onDragOver={isProcessing ? undefined : handleDrag}
-        onDragLeave={isProcessing ? undefined : handleDrag}
-        onDrop={isProcessing ? undefined : handleDrop}
-        onClick={isProcessing ? undefined : triggerFileInput}
-        className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all duration-300 ${
-          dragActive 
-            ? "border-blue-500 bg-blue-50/20" 
-            : "border-slate-200 hover:border-blue-400 hover:bg-slate-50/40"
-        } ${isProcessing ? "opacity-60 cursor-not-allowed bg-slate-50" : ""}`}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv"
-          onChange={handleChange}
-          className="hidden"
+        <button
+          type="button"
+          onClick={handleSyncZohoDirect}
           disabled={isProcessing}
-        />
-
-        {isProcessing ? (
-          <div className="flex flex-col items-center justify-center space-y-3 py-4">
-            <RefreshCw className="h-10 w-10 text-blue-600 animate-spin" />
-            <p className="text-sm font-bold text-slate-700">Uploading and syncing database with backend server...</p>
-            <p className="text-xs text-slate-400">Storing data persistently...</p>
-          </div>
-        ) : (
-          <>
-            <UploadCloud className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-            <p className="text-sm font-bold text-slate-850">
-              Drag & drop your student database CSV here, or <span className="text-blue-600 hover:underline">browse files</span>
-            </p>
-            <p className="text-xs text-slate-400 mt-2">
-              Strictly supports standard comma-delimited columns parsed directly in-memory
-            </p>
-          </>
-        )}
+          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-lg shadow-sm transition-all disabled:opacity-50 cursor-pointer shrink-0"
+        >
+          <RefreshCw className={`h-4 w-4 ${isProcessing ? "animate-spin" : ""}`} />
+          <span>{isProcessing ? "Synchronizing..." : "Sync All Data from Zoho"}</span>
+        </button>
       </div>
 
       {/* Notifications */}
       {successMsg && (
-        <div className="mt-4 p-4 bg-emerald-50 rounded-lg border border-emerald-100 flex items-start gap-2.5 text-xs text-emerald-800 animate-fadeIn">
+        <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-lg border border-emerald-200 dark:border-emerald-800 flex items-start gap-2.5 text-xs text-emerald-800 dark:text-emerald-300 animate-fadeIn">
           <CheckCircle className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
           <div>
-            <p className="font-bold">Sync successful</p>
-            <p className="mt-0.5 text-slate-600">{successMsg}</p>
+            <p className="font-bold">Sync Completed Successfully</p>
+            <p className="mt-0.5 text-emerald-700 dark:text-emerald-400">{successMsg}</p>
           </div>
         </div>
       )}
 
       {errorMsg && (
-        <div className="mt-4 p-4 bg-rose-50 rounded-lg border border-rose-100 flex items-start gap-2.5 text-xs text-rose-800 animate-fadeIn">
+        <div className="p-4 bg-rose-50 dark:bg-rose-950/30 rounded-lg border border-rose-200 dark:border-rose-800 flex items-start gap-2.5 text-xs text-rose-800 dark:text-rose-300 animate-fadeIn">
           <Info className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
           <div>
-            <p className="font-bold">Upload failed</p>
-            <p className="mt-0.5 text-slate-650">{errorMsg}</p>
+            <p className="font-bold">Sync Notification</p>
+            <p className="mt-0.5 text-rose-700 dark:text-rose-400">{errorMsg}</p>
           </div>
         </div>
       )}
 
-      {/* Structure Guide Section */}
-      <div className="mt-8 bg-slate-50/55 rounded-lg p-5 border border-slate-200">
-        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
-          <Info className="h-4 w-4 text-blue-600" />
-          CSV Header Schema Guideline
-        </h4>
-        <p className="text-xs text-slate-500 leading-relaxed mb-3 font-medium">
-          To ensure consistent, direct dynamic parsing on upload, please ensure your custom CSV contains standard headers including:
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {[
-            "Full Name", "Student ID", "Your Personal Mail ID", "Mobile Number", "Active Status", 
-            "Batch Details", "Batch Timing", "Highest Qualification", "Graduation College / University Name", 
-            "Graduation CGPA ", "Placed Organisation", "CTC(LPA)"
-          ].map(col => (
-            <span key={col} className="bg-white border border-slate-200 text-slate-600 text-[10px] px-2 py-0.5 rounded font-mono">
-              {col}
-            </span>
-          ))}
+      {/* Section: The Two Main Zoho Reports */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+            <Database className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            Main Zoho Database Reports
+          </h4>
+          <span className="text-[11px] text-slate-400">2 Connected Reports</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Report 1: Master Enrollment Database */}
+          <div className="bg-slate-50/70 dark:bg-slate-800/40 rounded-xl p-5 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
+            <div>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="p-2 bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 rounded-lg">
+                  <FileSpreadsheet className="h-5 w-5" />
+                </div>
+                <span className="bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200/60 dark:border-blue-800">
+                  Primary Registry
+                </span>
+              </div>
+              <h5 className="font-bold text-sm text-slate-800 dark:text-slate-200">
+                1. Students Data Report
+              </h5>
+              <p className="text-[11px] font-mono text-indigo-600 dark:text-indigo-400 mt-0.5">
+                Students_Data_Report
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                Contains master intake student records, enrollment dates, centre names, assigned batch details, timing slots, mobile numbers, state/district addresses, and active/refund status tracking.
+              </p>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-700/60 flex items-center justify-between gap-2">
+              <a
+                href="https://creatorapp.zohopublic.in/nxtwave/intensive-offline/report-perma/Students_Data_Report/y4KgkdzE1CXYTUnwEBs1zantAYKaBw108xs9z3njNj6V2sB3hS7GBuaGjkTVHV8wZqMVzGRNtVQpp3O5sAAmF3dQWYD8T5f6UpNh"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+              >
+                <span>Open Report</span>
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </a>
+
+              <a
+                href="https://creatorapp.zohopublic.in/nxtwave/intensive-offline/csv/Students_Data_Report/y4KgkdzE1CXYTUnwEBs1zantAYKaBw108xs9z3njNj6V2sB3hS7GBuaGjkTVHV8wZqMVzGRNtVQpp3O5sAAmF3dQWYD8T5f6UpNh"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 bg-white dark:bg-slate-700 px-2.5 py-1 rounded border border-slate-200 dark:border-slate-600"
+              >
+                <span>Direct CSV</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+          </div>
+
+          {/* Report 2: Student Profiles AI Studio */}
+          <div className="bg-slate-50/70 dark:bg-slate-800/40 rounded-xl p-5 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors">
+            <div>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="p-2 bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 rounded-lg">
+                  <Database className="h-5 w-5" />
+                </div>
+                <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-200/60 dark:border-indigo-800">
+                  Academics & Placements
+                </span>
+              </div>
+              <h5 className="font-bold text-sm text-slate-800 dark:text-slate-200">
+                2. Student Profiles AI Studio
+              </h5>
+              <p className="text-[11px] font-mono text-indigo-600 dark:text-indigo-400 mt-0.5">
+                Student_Profiles_AI_Studio
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                Contains verified student profile photos, direct resume links, graduation colleges, universities, branches, graduation year, CGPA scores, job tracks, and placed company details.
+              </p>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-700/60 flex items-center justify-between gap-2">
+              <a
+                href="https://creatorapp.zohopublic.in/nxtwave/intensive-offline/report-perma/Student_Profiles_AI_Studio/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
+              >
+                <span>Open Report</span>
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </a>
+
+              <a
+                href="https://creatorapp.zohopublic.in/nxtwave/intensive-offline/csv/Student_Profiles_AI_Studio/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 bg-white dark:bg-slate-700 px-2.5 py-1 rounded border border-slate-200 dark:border-slate-600"
+              >
+                <span>Direct CSV</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Integration Details Info Box */}
+      <div className="bg-slate-50/50 dark:bg-slate-800/30 rounded-xl p-4 border border-slate-200 dark:border-slate-800 flex items-start gap-3 text-xs text-slate-500 dark:text-slate-400">
+        <ShieldCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+        <div className="space-y-1">
+          <p className="font-bold text-slate-700 dark:text-slate-300">Automatic Database Merging</p>
+          <p className="leading-relaxed">
+            The system continuously synchronizes by matching student IDs across both reports, merging personal records from the Master Registry with academics, resumes, and placement offers from the Profiles Report into a unified, high-performance in-memory dataset.
+          </p>
         </div>
       </div>
     </div>
