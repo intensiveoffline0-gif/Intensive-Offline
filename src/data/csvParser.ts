@@ -148,6 +148,16 @@ export function deduplicateStudents(studentList: Student[]): Student[] {
   return deduped;
 }
 
+export function getBatchTimingSlot(batchDetails?: string, fallback?: string): string {
+  if (!batchDetails) return fallback || "";
+  const b = batchDetails.trim().toUpperCase();
+  if (b.startsWith("E")) return "07:00 AM - 10:00 AM";
+  if (b.startsWith("M")) return "10:30 AM - 01:30 PM";
+  if (b.startsWith("A")) return "02:30 PM - 05:30 PM";
+  if (b.startsWith("N")) return "06:00 PM - 09:00 PM";
+  return fallback || "10:30 AM - 01:30 PM";
+}
+
 export function parseStudentCSV(csvText: string): Student[] {
   if (!csvText) return [];
   const rows = parseCSVRows(csvText);
@@ -176,7 +186,7 @@ export function parseStudentCSV(csvText: string): Student[] {
       enrolledOn: row["enrolled on"] || "",
       batchDetails: row["batch details"] || "",
       gender: row["gender"] || "",
-      batchTiming: row["batch timing"] || "",
+      batchTiming: getBatchTimingSlot(row["batch details"], row["batch timing"]),
       preferredJobTrack: row["preferred job track"] || "",
       personalMailId: row["your personal mail id"] || row["personal mail id"] || row["email"] || "",
       district: row["permanent address district"] || row["district"] || "",

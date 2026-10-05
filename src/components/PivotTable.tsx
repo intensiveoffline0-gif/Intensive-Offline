@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Student } from "../types";
 import { Table, LayoutGrid, CheckCircle, MapPin, Filter } from "lucide-react";
+import { MultiSelectDropdown } from "./MultiSelectDropdown";
 
 interface PivotTableProps {
   students: Student[];
@@ -10,7 +11,7 @@ export function PivotTable({ students }: PivotTableProps) {
   const [rowDim, setRowDim] = useState<string>("batchDetails");
   const [colDim, setColDim] = useState<string>("activeStatus");
   const [metric, setMetric] = useState<string>("count");
-  const [selectedCentre, setSelectedCentre] = useState<string>("All");
+  const [selectedCentres, setSelectedCentres] = useState<string[]>([]);
 
   // Dynamically extract all available Centre Names
   const centreOptions = useMemo(() => {
@@ -22,6 +23,15 @@ export function PivotTable({ students }: PivotTableProps) {
       }
     });
     return Array.from(set).sort();
+  }, [students]);
+
+  const centreCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    students.forEach(s => {
+      const c = (s.centreName || "").trim();
+      if (c) counts[c] = (counts[c] || 0) + 1;
+    });
+    return counts;
   }, [students]);
 
   // Dynamically compute valid batches based on the active student dataset
@@ -114,9 +124,9 @@ export function PivotTable({ students }: PivotTableProps) {
   const pivotData = useMemo(() => {
     // 1. Filter by Centre Name if selected
     const validStudents = students.filter(s => {
-      if (selectedCentre !== "All") {
+      if (selectedCentres.length > 0) {
         const studentCentre = (s.centreName || "").trim().toUpperCase();
-        if (studentCentre !== selectedCentre.trim().toUpperCase()) {
+        if (!selectedCentres.some(c => c.trim().toUpperCase() === studentCentre)) {
           return false;
         }
       }
@@ -262,24 +272,22 @@ export function PivotTable({ students }: PivotTableProps) {
       rowTotals,
       colTotals,
       grandTotal,
-      rowCgpaSum,
-      colCgpaSum,
       grandCgpaSum,
       grandCgpaCount,
       totalStudentsCount: validStudents.length,
     };
-  }, [students, rowDim, colDim, metric, selectedCentre]);
+  }, [students, rowDim, colDim, metric, selectedCentres]);
 
   const dimensionName = (val: string) => {
     return dimensionOptions.find(o => o.value === val)?.label || val;
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+    <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-sm">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
           <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-            <Table className="h-5 w-5 text-blue-600" />
+            <Table className="h-5 w-5 text-indigo-600" />
             Configurable Pivot Table
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
@@ -288,31 +296,24 @@ export function PivotTable({ students }: PivotTableProps) {
         </div>
 
         {/* Dynamic selectors */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-end gap-3">
           {/* Centre Name Filter */}
-          <div className="flex flex-col">
-            <label className="text-[10px] font-bold text-indigo-600 uppercase mb-1 flex items-center gap-1">
-              <MapPin className="h-3 w-3 text-indigo-500" />
-              Centre Name Filter
-            </label>
-            <select
-              value={selectedCentre}
-              onChange={(e) => setSelectedCentre(e.target.value)}
-              className="px-3 py-1.5 bg-indigo-50/70 border border-indigo-200 rounded-lg text-xs font-semibold text-indigo-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="All">All Centres ({centreOptions.length})</option>
-              {centreOptions.map(centre => (
-                <option key={centre} value={centre}>{centre}</option>
-              ))}
-            </select>
-          </div>
+          <MultiSelectDropdown
+            label="CENTRE NAME"
+            shortLabel="Centre"
+            options={centreOptions}
+            selected={selectedCentres}
+            onChange={setSelectedCentres}
+            counts={centreCounts}
+            totalCount={students.length}
+          />
 
           <div className="flex flex-col">
-            <label className="text-[10px] font-bold text-slate-400 uppercase mb-1">Rows (Y-Axis)</label>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Rows (Y-Axis)</label>
             <select
               value={rowDim}
               onChange={(e) => setRowDim(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             >
               {dimensionOptions.map(opt => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -321,11 +322,11 @@ export function PivotTable({ students }: PivotTableProps) {
           </div>
 
           <div className="flex flex-col">
-            <label className="text-[10px] font-bold text-slate-400 uppercase mb-1">Columns (X-Axis)</label>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Columns (X-Axis)</label>
             <select
               value={colDim}
               onChange={(e) => setColDim(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             >
               {dimensionOptions.filter(d => d.value !== rowDim).map(opt => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -334,11 +335,11 @@ export function PivotTable({ students }: PivotTableProps) {
           </div>
 
           <div className="flex flex-col">
-            <label className="text-[10px] font-bold text-slate-400 uppercase mb-1">Cell Value Fact</label>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Cell Value Fact</label>
             <select
               value={metric}
               onChange={(e) => setMetric(e.target.value)}
-              className="px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs font-bold text-blue-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-1.5 bg-indigo-50 border border-indigo-200 rounded-lg text-xs font-bold text-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             >
               {metricOptions.map(opt => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -349,10 +350,10 @@ export function PivotTable({ students }: PivotTableProps) {
       </div>
 
       {/* Grid Container */}
-      <div className="mt-6 overflow-x-auto rounded-lg border border-slate-200">
+      <div className="mt-6 overflow-x-auto rounded-xl border border-slate-200">
         <table className="w-full text-left border-collapse text-xs">
           <thead>
-            <tr className="bg-slate-50/70 text-slate-500 font-semibold border-b border-slate-200">
+            <tr className="bg-slate-50/80 text-slate-500 font-semibold border-b border-slate-200">
               <th className="py-3 px-4 font-bold text-slate-700 border-r border-slate-200">
                 {dimensionName(rowDim)}
               </th>
@@ -361,15 +362,15 @@ export function PivotTable({ students }: PivotTableProps) {
                   {c}
                 </th>
               ))}
-              <th className="py-3 px-4 text-center font-bold bg-blue-50/40 text-blue-700 border-l border-slate-200">
+              <th className="py-3 px-4 text-center font-bold bg-indigo-50/60 text-indigo-700 border-l border-slate-200">
                 Grand Total
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {pivotData.rows.map(r => (
-              <tr key={r} className="hover:bg-slate-50/40 transition-colors">
-                <td className="py-3 px-4 font-semibold text-slate-850 border-r border-slate-200 bg-slate-50/20">
+              <tr key={r} className="hover:bg-slate-50/60 transition-colors">
+                <td className="py-3 px-4 font-semibold text-slate-800 border-r border-slate-200 bg-slate-50/20">
                   {r}
                 </td>
                 {pivotData.cols.map(c => {
@@ -381,7 +382,7 @@ export function PivotTable({ students }: PivotTableProps) {
                   );
                 })}
                 {/* Row totals */}
-                <td className="py-3 px-4 text-center font-bold bg-blue-50/10 text-slate-900 border-l border-slate-200">
+                <td className="py-3 px-4 text-center font-bold bg-indigo-50/20 text-slate-900 border-l border-slate-200">
                   {metric === "avgCgpa" ? (
                     pivotData.rowCgpaSum[r].count > 0 ? (
                       `${(pivotData.rowCgpaSum[r].sum / pivotData.rowCgpaSum[r].count).toFixed(2)} /10`
@@ -394,7 +395,7 @@ export function PivotTable({ students }: PivotTableProps) {
             ))}
 
             {/* Column totals */}
-            <tr className="bg-slate-50/50 font-semibold text-slate-800 border-t border-slate-200">
+            <tr className="bg-slate-50/80 font-semibold text-slate-800 border-t border-slate-200">
               <td className="py-3.5 px-4 text-slate-700 border-r border-slate-200">Grand Total</td>
               {pivotData.cols.map(c => (
                 <td key={c} className="py-3.5 px-4 text-center">
@@ -408,7 +409,7 @@ export function PivotTable({ students }: PivotTableProps) {
                 </td>
               ))}
               {/* Grand grand total */}
-              <td className="py-3.5 px-4 text-center bg-blue-55/20 text-blue-700 font-extrabold border-l border-slate-200">
+              <td className="py-3.5 px-4 text-center bg-indigo-50 text-indigo-700 font-extrabold border-l border-slate-200">
                 {metric === "avgCgpa" ? (
                   pivotData.grandCgpaCount > 0 ? (
                     `${(pivotData.grandCgpaSum / pivotData.grandCgpaCount).toFixed(2)} /10`

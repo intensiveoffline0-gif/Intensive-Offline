@@ -3,8 +3,9 @@ import { Student } from "../types";
 import { 
   User, Mail, Phone, MapPin, GraduationCap, Calendar, 
   Briefcase, Award, ClipboardCheck, Sparkles, Building, Bookmark,
-  FileText, ExternalLink
+  FileText, ExternalLink, Clock
 } from "lucide-react";
+import { getBatchTimingSlot } from "../data/csvParser";
 
 interface StudentProfileProps {
   student: Student | null;
@@ -23,10 +24,11 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
   }
 
   const isPlaced = !!(student.placedOrganisation || student.externalPlacedOrganisation);
-  const isRefunded = student.activeStatus?.toLowerCase() === "refunded";
+  const isRefunded = student.activeStatus.toLowerCase() === "refunded";
+  const timingSlot = getBatchTimingSlot(student.batchDetails, student.batchTiming);
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300">
+    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden transition-all duration-200">
       {/* Header Banner */}
       <div className="bg-slate-900 px-6 py-8 text-white relative">
         <div className="absolute right-4 top-4 flex items-center gap-2">
@@ -35,55 +37,58 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
               href={student.resume} 
               target="_blank" 
               rel="noopener noreferrer" 
-              className="flex items-center gap-1.5 bg-blue-500/30 hover:bg-blue-500/50 text-blue-200 border border-blue-400/40 px-3 py-1 rounded-full text-xs font-semibold transition-all"
+              className="flex items-center gap-1.5 bg-indigo-500/30 hover:bg-indigo-500/50 text-indigo-200 border border-indigo-400/40 px-3 py-1 rounded-full text-xs font-semibold transition-all"
             >
               <FileText className="h-3.5 w-3.5" />
               <span>Resume</span>
               <ExternalLink className="h-3 w-3" />
             </a>
           )}
-          <span className={`text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider ${
-            isRefunded ? "bg-red-400/20 text-red-300 border border-red-400/30" : "bg-emerald-400/20 text-emerald-300 border border-emerald-400/30"
+          <span className={`text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border ${
+            isRefunded ? "bg-rose-500/20 text-rose-300 border-rose-400/30" : "bg-emerald-500/20 text-emerald-300 border-emerald-400/30"
           }`}>
             {isRefunded ? "Refunded" : "Active"}
           </span>
         </div>
         
-        <div className="flex items-center gap-4">
-          <div className="relative h-16 w-16 shrink-0">
-            {student.profilePhoto ? (
-              <img 
-                src={student.profilePhoto} 
-                alt={student.fullName}
-                referrerPolicy="no-referrer"
-                className="h-16 w-16 rounded-full object-cover border-2 border-white/20 shadow-inner bg-slate-800"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  if (!target.src.includes("/api/zoho/image")) {
-                    target.src = `/api/zoho/image?url=${encodeURIComponent(student.profilePhoto!)}`;
-                  } else {
-                    target.style.display = "none";
-                    const fallback = target.nextElementSibling as HTMLElement;
-                    if (fallback) fallback.classList.remove("hidden");
-                  }
-                }}
-              />
-            ) : null}
-            <div className={`h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center font-extrabold text-2xl text-white shadow-inner ${student.profilePhoto ? "hidden" : ""}`}>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 sm:gap-6">
+          <div className="relative h-28 w-28 sm:h-32 sm:w-32 shrink-0">
+            <img 
+              src={`/api/zoho/photo/${student.studentId}`} 
+              alt={student.fullName}
+              referrerPolicy="no-referrer"
+              className="h-28 w-28 sm:h-32 sm:w-32 rounded-2xl object-cover border-4 border-white/20 shadow-xl bg-slate-800 ring-2 ring-indigo-500/40"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                if (student.profilePhoto && !target.src.includes(student.profilePhoto) && !target.src.includes("/api/zoho/image")) {
+                  target.src = student.profilePhoto;
+                } else {
+                  target.style.display = "none";
+                  const fallback = target.nextElementSibling as HTMLElement;
+                  if (fallback) fallback.classList.remove("hidden");
+                }
+              }}
+            />
+            <div className="hidden h-28 w-28 sm:h-32 sm:w-32 bg-indigo-600 rounded-2xl items-center justify-center font-extrabold text-4xl sm:text-5xl text-white shadow-xl border-4 border-white/20">
               {student.fullName.charAt(0)}
             </div>
           </div>
           <div>
-            <h2 className="text-xl font-bold flex items-center gap-1.5">{student.fullName}</h2>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-slate-300">
-              <span className="flex items-center gap-1 text-slate-200 bg-slate-800 px-2 py-0.5 rounded">
-                <Bookmark className="h-3 w-3 text-blue-400" />
+            <h2 className="text-2xl sm:text-3xl font-extrabold flex items-center gap-2">{student.fullName}</h2>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2 text-xs sm:text-sm text-slate-300">
+              <span className="flex items-center gap-1.5 text-slate-200 bg-slate-800/90 px-2.5 py-1 rounded-md font-mono font-medium">
+                <Bookmark className="h-3.5 w-3.5 text-indigo-400" />
                 ID: {student.studentId}
               </span>
               <span>•</span>
-              <span>{student.batchDetails}</span>
+              <span className="font-semibold text-indigo-200 font-mono">{student.batchDetails}</span>
               <span>•</span>
-              <span className="text-blue-300 font-medium">{student.preferredJobTrack?.replace(/_/g, " ")}</span>
+              <span className="flex items-center gap-1.5 bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 px-2.5 py-0.5 rounded-md text-xs font-semibold">
+                <Clock className="h-3.5 w-3.5 text-indigo-300" />
+                {timingSlot}
+              </span>
+              <span>•</span>
+              <span className="text-indigo-300 font-medium">{student.preferredJobTrack?.replace(/_/g, " ")}</span>
             </div>
           </div>
         </div>
@@ -92,86 +97,93 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
       <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Col: Contact and Administrative info */}
         <div className="space-y-6">
-          <div className="bg-slate-50/55 rounded-xl p-5 border border-slate-200">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-1.5">
-              <ClipboardCheck className="h-4 w-4 text-blue-600" />
+          <div className="bg-slate-50/70 rounded-2xl p-5 border border-slate-200">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+              <ClipboardCheck className="h-4 w-4 text-indigo-600" />
               Primary Metadata
             </h3>
             
             <div className="space-y-3.5 text-xs">
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Student ID</span>
-                <span className="font-semibold text-slate-800">{student.studentId}</span>
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
+                <span className="text-slate-500 font-medium">Student ID</span>
+                <span className="font-mono font-semibold text-slate-900">{student.studentId}</span>
               </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Active Status</span>
-                <span className={`font-semibold ${isRefunded ? "text-rose-600" : "text-emerald-600"}`}>
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
+                <span className="text-slate-500 font-medium">Active Status</span>
+                <span className={`font-semibold px-2 py-0.5 rounded-full text-[11px] border ${
+                  isRefunded 
+                    ? "bg-rose-50 text-rose-700 border-rose-200" 
+                    : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                }`}>
                   {isRefunded ? "Refunded" : "Active"}
                 </span>
               </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Enrolled On</span>
-                <span className="font-semibold text-slate-700">{student.enrolledOn}</span>
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
+                <span className="text-slate-500 font-medium">Enrolled On</span>
+                <span className="font-mono font-medium text-slate-700">{student.enrolledOn}</span>
               </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Batch details</span>
-                <span className="font-semibold text-slate-700">{student.batchDetails}</span>
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
+                <span className="text-slate-500 font-medium">Batch details</span>
+                <span className="font-mono font-semibold text-slate-800">{student.batchDetails}</span>
               </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Timing Slot</span>
-                <span className="font-semibold text-slate-700">{student.batchTiming}</span>
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
+                <span className="text-slate-500 font-medium">Timing Slot</span>
+                <span className="font-semibold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg text-xs border border-indigo-200 flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-indigo-600" />
+                  {timingSlot}
+                </span>
               </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Gender</span>
-                <span className="font-semibold text-slate-700">{student.gender || "N/A"}</span>
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
+                <span className="text-slate-500 font-medium">Gender</span>
+                <span className="font-medium text-slate-700">{student.gender || "N/A"}</span>
               </div>
               {student.centreName && (
-                <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                  <span className="text-slate-500">Centre Name</span>
-                  <span className="font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded text-[11px]">{student.centreName}</span>
+                <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
+                  <span className="text-slate-500 font-medium">Centre Name</span>
+                  <span className="font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md text-[11px]">{student.centreName}</span>
                 </div>
               )}
               {student.instructorName && (
                 <div className="flex justify-between items-center py-1.5">
-                  <span className="text-slate-500">Instructor</span>
-                  <span className="font-semibold text-blue-600">{student.instructorName}</span>
+                  <span className="text-slate-500 font-medium">Instructor</span>
+                  <span className="font-semibold text-slate-800">{student.instructorName}</span>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="bg-slate-50/55 rounded-xl p-5 border border-slate-200">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-1.5">
-              <Phone className="h-4 w-4 text-blue-600" />
+          <div className="bg-slate-50/70 rounded-2xl p-5 border border-slate-200">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+              <Phone className="h-4 w-4 text-indigo-600" />
               Contact details
             </h3>
             <div className="space-y-4 text-xs text-slate-600">
               <div className="flex items-center gap-3">
-                <div className="p-1 px-1.5 bg-white border border-slate-200 rounded text-slate-55">
+                <div className="p-1 px-1.5 bg-white border border-slate-200 rounded-lg text-slate-500 shadow-2xs">
                   <Mail className="h-3.5 w-3.5 text-slate-500" />
                 </div>
                 <div>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase">Personal Mail ID</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Personal Mail ID</p>
                   <p className="font-medium text-slate-800 break-all">{student.personalMailId || "N/A"}</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-3">
-                <div className="p-1 px-1.5 bg-white border border-slate-200 rounded text-slate-55">
+                <div className="p-1 px-1.5 bg-white border border-slate-200 rounded-lg text-slate-500 shadow-2xs">
                   <Phone className="h-3.5 w-3.5 text-slate-500" />
                 </div>
                 <div>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase">Mobile Number</p>
-                  <p className="font-medium text-slate-800">{student.mobileNumber || "N/A"}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Mobile Number</p>
+                  <p className="font-mono font-medium text-slate-800">{student.mobileNumber || "N/A"}</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-3">
-                <div className="p-1 px-1.5 bg-white border border-slate-200 rounded text-slate-55">
+                <div className="p-1 px-1.5 bg-white border border-slate-200 rounded-lg text-slate-500 shadow-2xs">
                   <MapPin className="h-3.5 w-3.5 text-slate-500" />
                 </div>
                 <div>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase">Home Address</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Home Address</p>
                   <p className="font-medium text-slate-800">
                     {student.district ? `${student.district}, ` : ""}{student.state} - {student.pincode}
                   </p>
@@ -184,75 +196,75 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
         {/* Center/Right: Academics & Placements */}
         <div className="lg:col-span-2 space-y-6">
           {/* Qualifications & Academics */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm">
             <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-              <GraduationCap className="h-4.5 w-4.5 text-blue-600" />
+              <GraduationCap className="h-4.5 w-4.5 text-indigo-600" />
               Academic Credentials
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Undergraduate Section */}
-              <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/20">
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/40">
                 <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-200">
-                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Graduation</span>
+                  <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">Graduation</span>
                   <span className="text-xs font-semibold text-slate-500">Degree Status</span>
                 </div>
                 <div className="space-y-2 text-xs">
                   <p className="font-bold text-slate-800">{student.graduationDegreeName} in {student.graduationStream || "General"}</p>
-                  <p className="text-slate-55 text-slate-600">{student.graduationCollegeName}</p>
+                  <p className="text-slate-600">{student.graduationCollegeName}</p>
                   <div className="flex justify-between text-slate-500 mt-2 font-medium">
-                    <span>Passing Year: <strong className="text-slate-800">{student.graduationYearOfPassing}</strong></span>
-                    <span>CGPA: <strong className="text-slate-800">{student.graduationCgpa || "N/A"}</strong></span>
+                    <span>Passing Year: <strong className="font-mono text-slate-800">{student.graduationYearOfPassing}</strong></span>
+                    <span>CGPA: <strong className="font-mono text-slate-800">{student.graduationCgpa || "N/A"}</strong></span>
                   </div>
                 </div>
               </div>
 
               {/* Postgraduate Section */}
-              <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/20">
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/40">
                 <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-200">
-                  <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">Post-Graduation</span>
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">Post-Graduation</span>
                   <span className="text-xs font-semibold text-slate-500">Master Degree</span>
                 </div>
                 {student.postGraduationDegreeName ? (
                   <div className="space-y-2 text-xs">
                     <p className="font-bold text-slate-800">{student.postGraduationDegreeName} in {student.postGraduationStream}</p>
-                    <p className="text-slate-55 text-slate-600">{student.postGraduationCollegeName}</p>
+                    <p className="text-slate-600">{student.postGraduationCollegeName}</p>
                     <div className="flex justify-between text-slate-500 mt-2 font-medium">
-                      <span>Passing Year: <strong className="text-slate-800">{student.postGraduationYearOfPassing}</strong></span>
-                      <span>Avg Score: <strong className="text-slate-800">{student.postGraduationCgpa || "N/A"}</strong></span>
+                      <span>Passing Year: <strong className="font-mono text-slate-800">{student.postGraduationYearOfPassing}</strong></span>
+                      <span>Avg Score: <strong className="font-mono text-slate-800">{student.postGraduationCgpa || "N/A"}</strong></span>
                     </div>
                   </div>
                 ) : (
-                  <div className="h-full flex items-center justify-center py-6 text-center text-slate-450 text-xs">
+                  <div className="h-full flex items-center justify-center py-6 text-center text-slate-400 text-xs">
                     <p>No Post-Graduation details submitted</p>
                   </div>
                 )}
               </div>
             </div>
             
-            <div className="mt-4 bg-blue-50/50 rounded-lg p-3 text-xs text-blue-800 flex items-center gap-2">
-              <span className="font-bold uppercase text-[9px] bg-blue-100 px-1.5 py-0.5 rounded text-blue-700">Highest Qualification</span>
+            <div className="mt-4 bg-indigo-50/60 border border-indigo-100 rounded-xl p-3 text-xs text-indigo-900 flex items-center gap-2">
+              <span className="font-bold uppercase text-[9px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Highest Qualification</span>
               <span className="font-medium text-slate-700">{student.highestQualification}</span>
             </div>
           </div>
 
           {/* Place Stats / Corporate Career */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm">
             <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-              <Briefcase className="h-4.5 w-4.5 text-blue-600" />
+              <Briefcase className="h-4.5 w-4.5 text-indigo-600" />
               Corporate Placements
             </h3>
 
             {isPlaced ? (
-              <div className="border border-blue-100 rounded-lg p-5 bg-gradient-to-tr from-blue-50/10 to-blue-50/30">
-                <div className="flex items-center gap-2 text-sm text-blue-900 font-bold mb-4">
-                  <Award className="h-5 w-5 text-blue-600" />
+              <div className="border border-indigo-100 rounded-xl p-5 bg-indigo-50/30">
+                <div className="flex items-center gap-2 text-sm text-indigo-900 font-bold mb-4">
+                  <Award className="h-5 w-5 text-indigo-600" />
                   Placed Candidate Portfolio
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
                   {student.placedOrganisation && (
-                    <div className="bg-white p-3 rounded-lg border border-slate-200">
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
                       <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-bold uppercase mb-1">
                         <Building className="h-3.5 w-3.5 text-slate-500" />
                         Internal Placed Drive
@@ -262,7 +274,7 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
                   )}
 
                   {student.externalPlacedOrganisation && (
-                    <div className="bg-white p-3 rounded-lg border border-slate-200">
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
                       <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-bold uppercase mb-1">
                         <Sparkles className="h-3.5 w-3.5 text-amber-500" />
                         External Placed Offcampus
@@ -271,9 +283,9 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
                     </div>
                   )}
 
-                  <div className="bg-white p-3 rounded-lg border border-slate-200">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
                     <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-bold uppercase mb-1">
-                      <Calendar className="h-3.5 w-3.5 text-blue-600" />
+                      <Calendar className="h-3.5 w-3.5 text-indigo-600" />
                       Job Type / Placement Month
                     </div>
                     <p className="font-bold text-slate-800 text-sm">
@@ -284,20 +296,20 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
                     </p>
                   </div>
 
-                  <div className="col-span-1 md:col-span-3 bg-blue-600 rounded-lg p-4 text-white flex items-center justify-between">
+                  <div className="col-span-1 md:col-span-3 bg-indigo-600 rounded-xl p-4 text-white flex items-center justify-between shadow-xs">
                     <div>
-                      <span className="text-[10px] font-semibold uppercase tracking-wider opacity-90">Cost To Company (LPA)</span>
-                      <p className="text-xl font-bold mt-0.5">{student.ctcLpa || "N/A"}</p>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-200">Cost To Company (CTC)</span>
+                      <p className="text-2xl font-extrabold mt-0.5 font-mono">{student.ctcLpa || "N/A"}</p>
                     </div>
-                    <div className="text-[9px] font-bold tracking-widest text-blue-100 border border-blue-400/50 rounded uppercase px-2.5 py-1">
+                    <div className="text-[10px] font-bold tracking-wider text-indigo-100 bg-indigo-700/60 border border-indigo-400/40 rounded-lg uppercase px-3 py-1">
                       Placement Complete
                     </div>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="bg-slate-50 border border-dashed border-slate-200 rounded-lg p-8 text-center text-slate-500 text-xs">
-                <Briefcase className="h-8 w-8 mx-auto mb-2 text-slate-350" />
+              <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-8 text-center text-slate-500 text-xs">
+                <Briefcase className="h-8 w-8 mx-auto mb-2 text-slate-400" />
                 <p className="font-bold text-slate-700">Not Placed Yet</p>
                 <p className="text-slate-400 mt-1 max-w-sm mx-auto">This student is currently in training/applied status. Placement details will load upon next successful drive recruitment logging.</p>
               </div>

@@ -191,7 +191,7 @@ export async function mergeZohoReports() {
       "Preferred Job Track": track || (pr ? getProfVal(pr, "graduation stream") : ""),
       "Your Personal Mail ID": email || (pr ? getProfVal(pr, "your personal mail id") : ""),
       "Permanent Address District": pr ? getProfVal(pr, "permanent address district") : "",
-      "Permanent State": state || (pr ? getProfVal(pr, "permanent state") : ""),
+      "Permanent State": (pr ? getProfVal(pr, "permanent state") : "") || state,
       "Permanent Address Pincode": "",
       "Highest Qualification": pr ? getProfVal(pr, "graduation degree name") : "",
       "Graduation Degree Name": pr ? getProfVal(pr, "graduation degree name") : "",

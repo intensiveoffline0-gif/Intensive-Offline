@@ -2055,7 +2055,7 @@ async function syncWithZohoLive(clientSyncTime) {
       "Preferred Job Track": track || (pr ? getProfVal(pr, "graduation stream") : "") || existing?.["Preferred Job Track"] || "",
       "Your Personal Mail ID": email || (pr ? getProfVal(pr, "your personal mail id") : "") || existing?.["Your Personal Mail ID"] || "",
       "Permanent Address District": (pr ? getProfVal(pr, "permanent address district") : "") || existing?.["Permanent Address District"] || "",
-      "Permanent State": state || (pr ? getProfVal(pr, "permanent state") : "") || existing?.["Permanent State"] || "",
+      "Permanent State": (pr ? getProfVal(pr, "permanent state") : "") || state || existing?.["Permanent State"] || "",
       "Permanent Address Pincode": existing?.["Permanent Address Pincode"] || "",
       "Highest Qualification": (pr ? getProfVal(pr, "graduation degree name") : "") || existing?.["Highest Qualification"] || "",
       "Graduation Degree Name": (pr ? getProfVal(pr, "graduation degree name") : "") || existing?.["Graduation Degree Name"] || "",

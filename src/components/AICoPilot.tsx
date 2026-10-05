@@ -101,9 +101,9 @@ You can ask me questions about active cohorts, placement stats, qualifications, 
       
       {/* Left side: Guide and Prompt suggestions */}
       <div className="space-y-6 lg:col-span-1">
-        <div className="bg-slate-900 text-white rounded-xl p-5 border border-slate-900 shadow-md">
+        <div className="bg-slate-900 text-white rounded-2xl p-5 border border-slate-900 shadow-md">
           <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="h-4 w-4 text-blue-400" />
+            <Sparkles className="h-4 w-4 text-indigo-400" />
             <h4 className="font-semibold text-xs tracking-widest uppercase">Co-Pilot Memory</h4>
           </div>
           <p className="text-xs text-slate-300 leading-relaxed font-light">
@@ -114,24 +114,24 @@ You can ask me questions about active cohorts, placement stats, qualifications, 
           <div className="mt-4 pt-4 border-t border-slate-800 space-y-2.5 text-xs">
             <div className="flex justify-between items-center text-slate-400 font-medium">
               <span>Database Size</span>
-              <span className="font-semibold text-slate-200">{students.length} students</span>
+              <span className="font-semibold text-slate-200 font-mono">{students.length} students</span>
             </div>
             <div className="flex justify-between items-center text-slate-400 font-medium">
               <span>CSV Byte Size</span>
-              <span className="font-semibold text-slate-200">{(rawCSV.length / 1024).toFixed(1)} KB</span>
+              <span className="font-semibold text-slate-200 font-mono">{(rawCSV.length / 1024).toFixed(1)} KB</span>
             </div>
           </div>
         </div>
 
         {/* Suggestion Chips */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Quick Queries</h4>
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm">
+          <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Quick Queries</h4>
           <div className="flex flex-col gap-2">
             {suggestions.map((prompt, idx) => (
               <button
                 key={idx}
                 onClick={() => handleSendMessage(prompt)}
-                className="text-left text-xs bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 hover:text-blue-700 rounded-lg p-2.5 transition-all text-slate-700 font-semibold"
+                className="text-left text-xs bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 hover:text-indigo-700 rounded-xl p-2.5 transition-all text-slate-700 font-semibold cursor-pointer"
               >
                 {prompt}
               </button>
@@ -141,16 +141,16 @@ You can ask me questions about active cohorts, placement stats, qualifications, 
       </div>
 
       {/* Main chat window */}
-      <div className="lg:col-span-3 flex flex-col bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden h-[540px]">
+      <div className="lg:col-span-3 flex flex-col bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden h-[540px]">
         {/* Chat header */}
-        <div className="bg-slate-50 border-b border-slate-200 p-4 shrink-0 flex items-center justify-between">
+        <div className="bg-slate-50/80 border-b border-slate-200 p-4 shrink-0 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 bg-blue-55/20 rounded-lg flex items-center justify-center text-blue-600 border border-blue-100">
-              <Bot className="h-5 w-5 text-blue-600" />
+            <div className="h-9 w-9 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 border border-indigo-200">
+              <Bot className="h-5 w-5 text-indigo-600" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-850">Sales Intelligence Assistant</h3>
-              <p className="text-[10px] text-slate-400 flex items-center gap-1">
+              <h3 className="text-sm font-bold text-slate-900">Sales Intelligence Assistant</h3>
+              <p className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
                 <span className="inline-block w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
                 Instant contextual lookup active
               </p>
@@ -210,12 +210,12 @@ You can ask me questions about active cohorts, placement stats, qualifications, 
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder="Ask a question about the active student dataset..."
-              className="flex-1 bg-white border border-slate-200 text-xs rounded-xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+              className="flex-1 bg-white border border-slate-200 text-xs rounded-xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium"
             />
             <button
               type="submit"
               disabled={isLoading || !inputValue.trim()}
-              className="bg-blue-600 border border-blue-650 disabled:opacity-50 text-white rounded-xl h-11 w-11 flex items-center justify-center shrink-0 hover:bg-blue-700 active:scale-95 transition-all text-xs"
+              className="bg-indigo-600 border border-indigo-700 disabled:opacity-50 text-white rounded-xl h-11 w-11 flex items-center justify-center shrink-0 hover:bg-indigo-700 active:scale-95 transition-all text-xs cursor-pointer shadow-xs"
             >
               <Send className="h-4 w-4" />
             </button>

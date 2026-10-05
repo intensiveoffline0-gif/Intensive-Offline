@@ -9,8 +9,10 @@ import { StudentProfile } from "./components/StudentProfile";
 import { CSVLoader } from "./components/CSVLoader";
 import { AICoPilot } from "./components/AICoPilot";
 import { AnalyticsCharts } from "./components/AnalyticsCharts";
+import { CollegeDistrictStats } from "./components/CollegeDistrictStats";
 import { EnrollmentDatePicker } from "./components/EnrollmentDatePicker";
 import { SearchableDropdown } from "./components/SearchableDropdown";
+import { MultiSelectDropdown } from "./components/MultiSelectDropdown";
 import { 
   BarChart3, Users, ShieldAlert, Award, FileUp, 
   Search, SlidersHorizontal, Table, Download, User, 
@@ -141,10 +143,16 @@ export default function App() {
     const localCSV = localStorage.getItem("nxtwave_custom_csv");
     if (localCSV) {
       const parsed = parseStudentCSV(localCSV);
-      // If local storage has at least as many records as default (1600), use it; otherwise prefer the full default dataset
-      if (parsed.length >= defaultParsed.length && parsed.length > 0) {
+      const localPhotos = parsed.filter(s => !!s.profilePhoto).length;
+      const defaultPhotos = defaultParsed.filter(s => !!s.profilePhoto).length;
+      // If local storage has valid photos and equal or more records, keep it
+      if (localPhotos >= defaultPhotos && parsed.length >= defaultParsed.length && parsed.length > 0) {
         return parsed;
       }
+      // Stale cache detected: clear old local storage so fresh photos take effect immediately
+      try {
+        localStorage.removeItem("nxtwave_custom_csv");
+      } catch (_) {}
     }
     return defaultParsed;
   });
@@ -154,7 +162,9 @@ export default function App() {
     const localCSV = localStorage.getItem("nxtwave_custom_csv");
     if (localCSV) {
       const parsed = parseStudentCSV(localCSV);
-      if (parsed.length >= defaultParsed.length && parsed.length > 0) {
+      const localPhotos = parsed.filter(s => !!s.profilePhoto).length;
+      const defaultPhotos = defaultParsed.filter(s => !!s.profilePhoto).length;
+      if (localPhotos >= defaultPhotos && parsed.length >= defaultParsed.length && parsed.length > 0) {
         return localCSV;
       }
     }
@@ -303,44 +313,44 @@ export default function App() {
     }
   };
 
-  // Filter States
+  // Multi-Select Filter States
   const [searchQuery, setSearchName] = useState<string>("");
-  const [filterCentre, setFilterCentre] = useState<string>("All");
-  const [filterCollege, setFilterCollege] = useState<string>("All");
-  const [filterDistrict, setFilterDistrict] = useState<string>("All");
-  const [filterState, setFilterState] = useState<string>("All");
-  const [filterPlacedStatus, setFilterPlacedStatus] = useState<string>("All");
-  const [filterTrack, setFilterTrack] = useState<string>("All");
+  const [filterCentres, setFilterCentres] = useState<string[]>([]);
+  const [filterColleges, setFilterColleges] = useState<string[]>([]);
+  const [filterDistricts, setFilterDistricts] = useState<string[]>([]);
+  const [filterStates, setFilterStates] = useState<string[]>([]);
+  const [filterPlacedStatuses, setFilterPlacedStatuses] = useState<string[]>([]);
+  const [filterTracks, setFilterTracks] = useState<string[]>([]);
+  const [filterBatches, setFilterBatches] = useState<string[]>([]);
   const [filterStartDate, setFilterStartDate] = useState<Date | null>(null);
   const [filterEndDate, setFilterEndDate] = useState<Date | null>(null);
-  const [filterBatch, setFilterBatch] = useState<string>("All");
 
   // Track if any search filter is applied
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (searchQuery.trim() !== "") count++;
-    if (filterCentre !== "All") count++;
-    if (filterCollege !== "All") count++;
-    if (filterDistrict !== "All") count++;
-    if (filterState !== "All") count++;
-    if (filterPlacedStatus !== "All") count++;
-    if (filterTrack !== "All") count++;
-    if (filterBatch !== "All") count++;
+    if (filterCentres.length > 0) count++;
+    if (filterColleges.length > 0) count++;
+    if (filterDistricts.length > 0) count++;
+    if (filterStates.length > 0) count++;
+    if (filterPlacedStatuses.length > 0) count++;
+    if (filterTracks.length > 0) count++;
+    if (filterBatches.length > 0) count++;
     if (filterStartDate !== null || filterEndDate !== null) count++;
     return count;
-  }, [searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+  }, [searchQuery, filterCentres, filterColleges, filterDistricts, filterStates, filterPlacedStatuses, filterTracks, filterBatches, filterStartDate, filterEndDate]);
 
   const hasActiveFilters = activeFiltersCount > 0;
 
   const handleClearAllFilters = () => {
     setSearchName("");
-    setFilterCentre("All");
-    setFilterCollege("All");
-    setFilterDistrict("All");
-    setFilterState("All");
-    setFilterPlacedStatus("All");
-    setFilterTrack("All");
-    setFilterBatch("All");
+    setFilterCentres([]);
+    setFilterColleges([]);
+    setFilterDistricts([]);
+    setFilterStates([]);
+    setFilterPlacedStatuses([]);
+    setFilterTracks([]);
+    setFilterBatches([]);
     setFilterStartDate(null);
     setFilterEndDate(null);
   };
@@ -478,18 +488,18 @@ export default function App() {
     return students.find(s => s.studentId === selectedStudentId) || null;
   }, [students, selectedStudentId]);
  
-  // Generic Filter Matching Engine for Cascading/Faceted Filter Logic
+  // Generic Multi-Select Filter Matching Engine for Cascading/Faceted Filter Logic
   const matchStudentWithFilters = (
     s: Student, 
     criteria: {
       searchQuery?: string;
-      centre?: string;
-      college?: string;
-      district?: string;
-      state?: string;
-      placedStatus?: string;
-      track?: string;
-      batch?: string;
+      centres?: string[];
+      colleges?: string[];
+      districts?: string[];
+      states?: string[];
+      placedStatuses?: string[];
+      tracks?: string[];
+      batches?: string[];
       startDate?: Date | null;
       endDate?: Date | null;
     }
@@ -500,57 +510,68 @@ export default function App() {
       const matchSearch = 
         (s.fullName || "").toLowerCase().includes(q) ||
         (s.studentId || "").toLowerCase().includes(q) ||
-        (s.personalMailId || "").toLowerCase().includes(q);
+        (s.personalMailId || "").toLowerCase().includes(q) ||
+        (s.mobileNumber || "").includes(q);
       if (!matchSearch) return false;
     }
 
-    // 2. Centre Name
-    if (criteria.centre && criteria.centre !== "All") {
-      if ((s.centreName || "").trim().toUpperCase() !== criteria.centre.trim().toUpperCase()) {
+    // 2. Centre Name (multi-select)
+    if (criteria.centres && criteria.centres.length > 0) {
+      const sCentre = (s.centreName || "").trim().toUpperCase();
+      if (!criteria.centres.some(c => c.trim().toUpperCase() === sCentre)) {
         return false;
       }
     }
 
-    // 3. College
-    if (criteria.college && criteria.college !== "All") {
-      if ((s.graduationCollegeName || "").trim().toLowerCase() !== criteria.college.trim().toLowerCase()) {
+    // 3. College (multi-select)
+    if (criteria.colleges && criteria.colleges.length > 0) {
+      const sCollege = (s.graduationCollegeName || "").trim().toLowerCase();
+      if (!criteria.colleges.some(c => c.trim().toLowerCase() === sCollege)) {
         return false;
       }
     }
 
-    // 4. District
-    if (criteria.district && criteria.district !== "All") {
-      if ((s.district || "").trim().toLowerCase() !== criteria.district.trim().toLowerCase()) {
+    // 4. District (multi-select)
+    if (criteria.districts && criteria.districts.length > 0) {
+      const sDistrict = (s.district || "").trim().toLowerCase();
+      if (!criteria.districts.some(d => d.trim().toLowerCase() === sDistrict)) {
         return false;
       }
     }
 
-    // 5. State
-    if (criteria.state && criteria.state !== "All") {
-      if ((s.state || "").trim().toLowerCase() !== criteria.state.trim().toLowerCase()) {
+    // 5. State (multi-select)
+    if (criteria.states && criteria.states.length > 0) {
+      const sState = (s.state || "").trim().toLowerCase();
+      if (!criteria.states.some(st => st.trim().toLowerCase() === sState)) {
         return false;
       }
     }
 
-    // 6. Placed Status
-    if (criteria.placedStatus && criteria.placedStatus !== "All") {
+    // 6. Placed Status (multi-select)
+    if (criteria.placedStatuses && criteria.placedStatuses.length > 0) {
       const hasNxtwave = !!s.placedOrganisation;
       const hasExternal = !!s.externalPlacedOrganisation;
-      if (criteria.placedStatus === "Placed Through Nxtwave" && !hasNxtwave) return false;
-      if (criteria.placedStatus === "External Placed" && !hasExternal) return false;
-      if (criteria.placedStatus === "Yet To Place" && (hasNxtwave || hasExternal)) return false;
-    }
+      let studentStatus = "Yet To Place";
+      if (hasNxtwave) studentStatus = "Placed Through Nxtwave";
+      else if (hasExternal) studentStatus = "External Placed";
 
-    // 7. Preferred Track
-    if (criteria.track && criteria.track !== "All") {
-      if ((s.preferredJobTrack || "").trim() !== criteria.track.trim()) {
+      if (!criteria.placedStatuses.includes(studentStatus)) {
         return false;
       }
     }
 
-    // 8. Batch Details
-    if (criteria.batch && criteria.batch !== "All") {
-      if ((s.batchDetails || "").trim().toUpperCase() !== criteria.batch.trim().toUpperCase()) {
+    // 7. Preferred Track (multi-select)
+    if (criteria.tracks && criteria.tracks.length > 0) {
+      const sTrack = (s.preferredJobTrack || "").trim();
+      if (!criteria.tracks.some(t => t.trim() === sTrack)) {
+        return false;
+      }
+    }
+
+    // 8. Batch Details (multi-select)
+    if (criteria.batches && criteria.batches.length > 0) {
+      const sBatch = (s.batchDetails || "").trim().toUpperCase();
+      if (!criteria.batches.some(b => b.trim().toUpperCase() === sBatch)) {
         return false;
       }
     }
@@ -578,100 +599,100 @@ export default function App() {
   const studentsForDistrict = useMemo(() => {
     return students.filter(s => matchStudentWithFilters(s, {
       searchQuery,
-      centre: filterCentre,
-      college: filterCollege,
-      state: filterState,
-      placedStatus: filterPlacedStatus,
-      track: filterTrack,
-      batch: filterBatch,
+      centres: filterCentres,
+      colleges: filterColleges,
+      states: filterStates,
+      placedStatuses: filterPlacedStatuses,
+      tracks: filterTracks,
+      batches: filterBatches,
       startDate: filterStartDate,
       endDate: filterEndDate
     }));
-  }, [students, searchQuery, filterCentre, filterCollege, filterState, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+  }, [students, searchQuery, filterCentres, filterColleges, filterStates, filterPlacedStatuses, filterTracks, filterBatches, filterStartDate, filterEndDate]);
 
   const studentsForState = useMemo(() => {
     return students.filter(s => matchStudentWithFilters(s, {
       searchQuery,
-      centre: filterCentre,
-      college: filterCollege,
-      district: filterDistrict,
-      placedStatus: filterPlacedStatus,
-      track: filterTrack,
-      batch: filterBatch,
+      centres: filterCentres,
+      colleges: filterColleges,
+      districts: filterDistricts,
+      placedStatuses: filterPlacedStatuses,
+      tracks: filterTracks,
+      batches: filterBatches,
       startDate: filterStartDate,
       endDate: filterEndDate
     }));
-  }, [students, searchQuery, filterCentre, filterCollege, filterDistrict, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+  }, [students, searchQuery, filterCentres, filterColleges, filterDistricts, filterPlacedStatuses, filterTracks, filterBatches, filterStartDate, filterEndDate]);
 
   const studentsForCollege = useMemo(() => {
     return students.filter(s => matchStudentWithFilters(s, {
       searchQuery,
-      centre: filterCentre,
-      district: filterDistrict,
-      state: filterState,
-      placedStatus: filterPlacedStatus,
-      track: filterTrack,
-      batch: filterBatch,
+      centres: filterCentres,
+      districts: filterDistricts,
+      states: filterStates,
+      placedStatuses: filterPlacedStatuses,
+      tracks: filterTracks,
+      batches: filterBatches,
       startDate: filterStartDate,
       endDate: filterEndDate
     }));
-  }, [students, searchQuery, filterCentre, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+  }, [students, searchQuery, filterCentres, filterDistricts, filterStates, filterPlacedStatuses, filterTracks, filterBatches, filterStartDate, filterEndDate]);
 
   const studentsForCentre = useMemo(() => {
     return students.filter(s => matchStudentWithFilters(s, {
       searchQuery,
-      college: filterCollege,
-      district: filterDistrict,
-      state: filterState,
-      placedStatus: filterPlacedStatus,
-      track: filterTrack,
-      batch: filterBatch,
+      colleges: filterColleges,
+      districts: filterDistricts,
+      states: filterStates,
+      placedStatuses: filterPlacedStatuses,
+      tracks: filterTracks,
+      batches: filterBatches,
       startDate: filterStartDate,
       endDate: filterEndDate
     }));
-  }, [students, searchQuery, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+  }, [students, searchQuery, filterColleges, filterDistricts, filterStates, filterPlacedStatuses, filterTracks, filterBatches, filterStartDate, filterEndDate]);
 
   const studentsForBatch = useMemo(() => {
     return students.filter(s => matchStudentWithFilters(s, {
       searchQuery,
-      centre: filterCentre,
-      college: filterCollege,
-      district: filterDistrict,
-      state: filterState,
-      placedStatus: filterPlacedStatus,
-      track: filterTrack,
+      centres: filterCentres,
+      colleges: filterColleges,
+      districts: filterDistricts,
+      states: filterStates,
+      placedStatuses: filterPlacedStatuses,
+      tracks: filterTracks,
       startDate: filterStartDate,
       endDate: filterEndDate
     }));
-  }, [students, searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterStartDate, filterEndDate]);
+  }, [students, searchQuery, filterCentres, filterColleges, filterDistricts, filterStates, filterPlacedStatuses, filterTracks, filterStartDate, filterEndDate]);
 
   const studentsForTrack = useMemo(() => {
     return students.filter(s => matchStudentWithFilters(s, {
       searchQuery,
-      centre: filterCentre,
-      college: filterCollege,
-      district: filterDistrict,
-      state: filterState,
-      placedStatus: filterPlacedStatus,
-      batch: filterBatch,
+      centres: filterCentres,
+      colleges: filterColleges,
+      districts: filterDistricts,
+      states: filterStates,
+      placedStatuses: filterPlacedStatuses,
+      batches: filterBatches,
       startDate: filterStartDate,
       endDate: filterEndDate
     }));
-  }, [students, searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterBatch, filterStartDate, filterEndDate]);
+  }, [students, searchQuery, filterCentres, filterColleges, filterDistricts, filterStates, filterPlacedStatuses, filterBatches, filterStartDate, filterEndDate]);
 
   const studentsForPlacedStatus = useMemo(() => {
     return students.filter(s => matchStudentWithFilters(s, {
       searchQuery,
-      centre: filterCentre,
-      college: filterCollege,
-      district: filterDistrict,
-      state: filterState,
-      track: filterTrack,
-      batch: filterBatch,
+      centres: filterCentres,
+      colleges: filterColleges,
+      districts: filterDistricts,
+      states: filterStates,
+      tracks: filterTracks,
+      batches: filterBatches,
       startDate: filterStartDate,
       endDate: filterEndDate
     }));
-  }, [students, searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+  }, [students, searchQuery, filterCentres, filterColleges, filterDistricts, filterStates, filterTracks, filterBatches, filterStartDate, filterEndDate]);
 
   // 2. Cascading Derived Lists and Option Counts for Dropdowns
   const districtsList = useMemo(() => {
@@ -846,63 +867,71 @@ export default function App() {
   }, [placedStatusCounts]);
 
   // 3. Cascading Auto-Reset: If active selection no longer exists in refined options, reset to "All"
+  // 3. Cascading Auto-Pruning: If active selections no longer exist in refined options, prune them
   useEffect(() => {
-    if (filterDistrict !== "All" && !districtsList.includes(filterDistrict)) {
-      setFilterDistrict("All");
+    if (filterDistricts.length > 0) {
+      const valid = filterDistricts.filter(d => districtsList.includes(d));
+      if (valid.length !== filterDistricts.length) setFilterDistricts(valid);
     }
-  }, [districtsList, filterDistrict]);
+  }, [districtsList, filterDistricts]);
 
   useEffect(() => {
-    if (filterCollege !== "All" && !collegesList.includes(filterCollege)) {
-      setFilterCollege("All");
+    if (filterColleges.length > 0) {
+      const valid = filterColleges.filter(c => collegesList.includes(c));
+      if (valid.length !== filterColleges.length) setFilterColleges(valid);
     }
-  }, [collegesList, filterCollege]);
+  }, [collegesList, filterColleges]);
 
   useEffect(() => {
-    if (filterCentre !== "All" && !centresList.includes(filterCentre)) {
-      setFilterCentre("All");
+    if (filterCentres.length > 0) {
+      const valid = filterCentres.filter(c => centresList.includes(c));
+      if (valid.length !== filterCentres.length) setFilterCentres(valid);
     }
-  }, [centresList, filterCentre]);
+  }, [centresList, filterCentres]);
 
   useEffect(() => {
-    if (filterState !== "All" && !statesList.includes(filterState)) {
-      setFilterState("All");
+    if (filterStates.length > 0) {
+      const valid = filterStates.filter(s => statesList.includes(s));
+      if (valid.length !== filterStates.length) setFilterStates(valid);
     }
-  }, [statesList, filterState]);
+  }, [statesList, filterStates]);
 
   useEffect(() => {
-    if (filterBatch !== "All" && !batchesList.includes(filterBatch)) {
-      setFilterBatch("All");
+    if (filterBatches.length > 0) {
+      const valid = filterBatches.filter(b => batchesList.includes(b));
+      if (valid.length !== filterBatches.length) setFilterBatches(valid);
     }
-  }, [batchesList, filterBatch]);
+  }, [batchesList, filterBatches]);
 
   useEffect(() => {
-    if (filterTrack !== "All" && !tracksList.includes(filterTrack)) {
-      setFilterTrack("All");
+    if (filterTracks.length > 0) {
+      const valid = filterTracks.filter(t => tracksList.includes(t));
+      if (valid.length !== filterTracks.length) setFilterTracks(valid);
     }
-  }, [tracksList, filterTrack]);
+  }, [tracksList, filterTracks]);
 
   useEffect(() => {
-    if (filterPlacedStatus !== "All" && !placedStatusList.includes(filterPlacedStatus)) {
-      setFilterPlacedStatus("All");
+    if (filterPlacedStatuses.length > 0) {
+      const valid = filterPlacedStatuses.filter(p => placedStatusList.includes(p));
+      if (valid.length !== filterPlacedStatuses.length) setFilterPlacedStatuses(valid);
     }
-  }, [placedStatusList, filterPlacedStatus]);
+  }, [placedStatusList, filterPlacedStatuses]);
 
   // 4. Master Filtered Students List
   const filteredStudents = useMemo(() => {
     return students.filter(s => matchStudentWithFilters(s, {
       searchQuery,
-      centre: filterCentre,
-      college: filterCollege,
-      district: filterDistrict,
-      state: filterState,
-      placedStatus: filterPlacedStatus,
-      track: filterTrack,
-      batch: filterBatch,
+      centres: filterCentres,
+      colleges: filterColleges,
+      districts: filterDistricts,
+      states: filterStates,
+      placedStatuses: filterPlacedStatuses,
+      tracks: filterTracks,
+      batches: filterBatches,
       startDate: filterStartDate,
       endDate: filterEndDate
     }));
-  }, [students, searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+  }, [students, searchQuery, filterCentres, filterColleges, filterDistricts, filterStates, filterPlacedStatuses, filterTracks, filterBatches, filterStartDate, filterEndDate]);
 
   // Aggregate Core Metrics (KPIs) - dynamically reflects active filters
   const stats = useMemo(() => {
@@ -972,7 +1001,7 @@ export default function App() {
   // Reset pagination to page 1 whenever any filter or search changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filterCentre, filterCollege, filterDistrict, filterState, filterPlacedStatus, filterTrack, filterBatch, filterStartDate, filterEndDate]);
+  }, [searchQuery, filterCentres, filterColleges, filterDistricts, filterStates, filterPlacedStatuses, filterTracks, filterBatches, filterStartDate, filterEndDate]);
 
   const totalRegistryRecords = filteredRegistryStudents.length;
   const totalRegistryPages = Math.max(1, Math.ceil(totalRegistryRecords / PAGE_SIZE));
@@ -1001,8 +1030,8 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col font-sans bg-[#F8FAFC] text-slate-800">
       
-      {/* Sticky Top Header banner area - Integrated seamlessly with Dashboard color theme */}
-      <header className="bg-[#F8FAFC] border-b border-slate-200/80 sticky top-0 z-50 shadow-xs py-3.5 font-sans">
+      {/* Sticky Top Header banner area */}
+      <header className="bg-white border-b border-slate-200/90 sticky top-0 z-50 shadow-2xs py-3.5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
           
           {/* Title & Descriptors Section on the left */}
@@ -1155,24 +1184,35 @@ export default function App() {
         
         {/* Navigation Tabs bar & Admin Control Panel */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <nav className="flex flex-wrap gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-full w-fit border border-slate-200/40 dark:border-slate-800">
+          <nav className="flex flex-wrap gap-1 bg-slate-100 p-1.5 rounded-2xl w-fit border border-slate-200/90 shadow-2xs">
             <button
               onClick={() => setActiveTab("dashboard")}
-              className={`px-6 py-1.5 rounded-full text-sm font-medium transition-all ${
+              className={`px-5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === "dashboard" 
-                  ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs" 
-                  : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  ? "bg-indigo-600 text-white shadow-xs" 
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
               }`}
             >
               Campus Dashboard
             </button>
+
+            <button
+              onClick={() => setActiveTab("colleges")}
+              className={`px-5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === "colleges" 
+                  ? "bg-indigo-600 text-white shadow-xs" 
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              College & District Stats
+            </button>
             
             <button
               onClick={() => setActiveTab("registry")}
-              className={`px-6 py-1.5 rounded-full text-sm font-medium transition-all ${
+              className={`px-5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === "registry" 
-                  ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs" 
-                  : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  ? "bg-indigo-600 text-white shadow-xs" 
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
               }`}
             >
               Students Details
@@ -1180,10 +1220,10 @@ export default function App() {
 
             <button
               onClick={() => setActiveTab("profiles")}
-              className={`px-6 py-1.5 rounded-full text-sm font-medium transition-all ${
+              className={`px-5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === "profiles" 
-                  ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs" 
-                  : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  ? "bg-indigo-600 text-white shadow-xs" 
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
               }`}
             >
               Student Profiles
@@ -1191,10 +1231,10 @@ export default function App() {
 
             <button
               onClick={() => setActiveTab("chatbot")}
-              className={`px-6 py-1.5 rounded-full text-sm font-medium transition-all ${
+              className={`px-5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === "chatbot" 
-                  ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs" 
-                  : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  ? "bg-indigo-600 text-white shadow-xs" 
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
               }`}
             >
               Sales Co-pilot
@@ -1202,7 +1242,7 @@ export default function App() {
           </nav>
 
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
               {stats.active} Records Active ({stats.total} Enrolled)
             </span>
@@ -1213,34 +1253,34 @@ export default function App() {
         {activeTab === "dashboard" && (
           <div className="space-y-6 animate-fadeIn">
             {/* Search Filters Area (Top of Campus Dashboard) */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm flex flex-wrap gap-4 items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <SlidersHorizontal className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" />
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest">Search Filters</span>
-                {hasActiveFilters && (
-                  <button
-                    onClick={handleClearAllFilters}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all cursor-pointer shadow-xs animate-fadeIn"
-                    title="Clear all applied filters"
-                  >
-                    <RotateCcw className="h-3 w-3" />
-                    <span>Clear Filters</span>
-                    <span className="px-1.5 py-0.2 bg-rose-200/60 dark:bg-rose-800/60 rounded-full text-[10px]">
-                      {activeFiltersCount}
-                    </span>
-                  </button>
-                )}
-              </div>
-              
-              <div className="flex flex-wrap gap-3 items-center w-full md:w-auto">
-                <div className="relative flex-1 md:w-56">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <SlidersHorizontal className="h-4.5 w-4.5 text-indigo-600" />
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Search Filters</span>
+                  {hasActiveFilters && (
+                    <button
+                      onClick={handleClearAllFilters}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-all cursor-pointer shadow-2xs"
+                      title="Clear all applied filters"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      <span>Clear Filters</span>
+                      <span className="px-1.5 py-0.2 bg-rose-200/60 text-rose-800 rounded-full text-[10px] font-mono">
+                        {activeFiltersCount}
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="relative w-full sm:w-80">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Search name, roll num, email..."
+                    placeholder="Search name, roll num, mobile, email..."
                     value={searchQuery}
                     onChange={(e) => setSearchName(e.target.value)}
-                    className="pl-9 pr-8 py-1.5 w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs placeholder-slate-400 dark:placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-slate-100"
+                    className="pl-9 pr-8 py-2 w-full bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-slate-800 font-medium"
                   />
                   {searchQuery && (
                     <button
@@ -1252,9 +1292,83 @@ export default function App() {
                     </button>
                   )}
                 </div>
+              </div>
 
-                {/* Enrolled Date Range Filter */}
+              {/* Multi-Select Filters Row */}
+              <div className="flex flex-wrap items-end gap-3">
+                <MultiSelectDropdown
+                  label="CENTRE"
+                  shortLabel="Centre"
+                  options={centresList}
+                  selected={filterCentres}
+                  onChange={setFilterCentres}
+                  counts={centreCounts}
+                  totalCount={studentsForCentre.length}
+                />
+
+                <MultiSelectDropdown
+                  label="BATCH"
+                  shortLabel="Batch"
+                  options={batchesList}
+                  selected={filterBatches}
+                  onChange={setFilterBatches}
+                  counts={batchCounts}
+                  totalCount={studentsForBatch.length}
+                />
+
+                <MultiSelectDropdown
+                  label="STATE"
+                  shortLabel="State"
+                  options={statesList}
+                  selected={filterStates}
+                  onChange={setFilterStates}
+                  counts={stateCounts}
+                  totalCount={studentsForState.length}
+                />
+
+                <MultiSelectDropdown
+                  label="DISTRICT"
+                  shortLabel="District"
+                  options={districtsList}
+                  selected={filterDistricts}
+                  onChange={setFilterDistricts}
+                  counts={districtCounts}
+                  totalCount={studentsForDistrict.length}
+                />
+
+                <MultiSelectDropdown
+                  label="COLLEGE"
+                  shortLabel="College"
+                  options={collegesList}
+                  selected={filterColleges}
+                  onChange={setFilterColleges}
+                  counts={collegeCounts}
+                  totalCount={studentsForCollege.length}
+                />
+
+                <MultiSelectDropdown
+                  label="PLACED STATUS"
+                  shortLabel="Placed"
+                  options={placedStatusList}
+                  selected={filterPlacedStatuses}
+                  onChange={setFilterPlacedStatuses}
+                  counts={placedStatusCounts}
+                  totalCount={studentsForPlacedStatus.length}
+                />
+
+                <MultiSelectDropdown
+                  label="JOB TRACK"
+                  shortLabel="Track"
+                  options={tracksList}
+                  selected={filterTracks}
+                  onChange={setFilterTracks}
+                  counts={trackCounts}
+                  totalCount={studentsForTrack.length}
+                  optionFormatter={(track) => track.replace(/_/g, " ")}
+                />
+
                 <EnrollmentDatePicker 
+                  label="ENROLLED DATE"
                   startDate={filterStartDate}
                   endDate={filterEndDate}
                   onApply={(start, end) => {
@@ -1262,78 +1376,6 @@ export default function App() {
                     setFilterEndDate(end);
                   }}
                 />
-
-                <SearchableDropdown
-                  label="Centre Name"
-                  options={centresList}
-                  value={filterCentre}
-                  onChange={setFilterCentre}
-                  counts={centreCounts}
-                  totalCount={studentsForCentre.length}
-                  placeholder="-Select Centre Name-"
-                />
-
-                <SearchableDropdown
-                  label="Colleges"
-                  options={collegesList}
-                  value={filterCollege}
-                  onChange={setFilterCollege}
-                  counts={collegeCounts}
-                  totalCount={studentsForCollege.length}
-                  placeholder="-Select College-"
-                />
-
-                <SearchableDropdown
-                  label="Districts"
-                  options={districtsList}
-                  value={filterDistrict}
-                  onChange={setFilterDistrict}
-                  counts={districtCounts}
-                  totalCount={studentsForDistrict.length}
-                  placeholder="-Select District-"
-                />
-
-                <SearchableDropdown
-                  label="States"
-                  options={statesList}
-                  value={filterState}
-                  onChange={setFilterState}
-                  counts={stateCounts}
-                  totalCount={studentsForState.length}
-                  placeholder="-Select State-"
-                />
-
-                <SearchableDropdown
-                  label="Placed Statuses"
-                  options={placedStatusList}
-                  value={filterPlacedStatus}
-                  onChange={setFilterPlacedStatus}
-                  counts={placedStatusCounts}
-                  totalCount={studentsForPlacedStatus.length}
-                  placeholder="-Select Placed Status-"
-                />
-
-                <SearchableDropdown
-                  label="Job Tracks"
-                  options={tracksList}
-                  value={filterTrack}
-                  onChange={setFilterTrack}
-                  counts={trackCounts}
-                  totalCount={studentsForTrack.length}
-                  placeholder="-Select Job Track-"
-                  optionFormatter={(track) => track.replace(/_/g, " ")}
-                />
-
-                {hasActiveFilters && (
-                  <button
-                    onClick={handleClearAllFilters}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/50 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer animate-fadeIn"
-                    title="Clear all active filters"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                    <span>Clear Filters</span>
-                  </button>
-                )}
               </div>
             </div>
 
@@ -1342,7 +1384,7 @@ export default function App() {
               <MetricCard 
                 title="Total Enrolls" 
                 value={stats.total} 
-                icon={<Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />} 
+                icon={<Users className="h-5 w-5 text-indigo-600" />} 
                 subtitle={hasActiveFilters ? `Filtered out of ${students.length} total enrollments` : "Master Enrollments Report count"}
               />
               <MetricCard 
@@ -1369,18 +1411,35 @@ export default function App() {
           </div>
         )}
 
+        {/* PAGE: COLLEGE & DISTRICT STATS */}
+        {activeTab === "colleges" && (
+          <div className="animate-fadeIn">
+            <CollegeDistrictStats 
+              students={students}
+              onSelectCollege={(collegeName) => {
+                setFilterColleges([collegeName]);
+                setActiveTab("registry");
+              }}
+              onSelectDistrict={(districtName) => {
+                setFilterDistricts([districtName]);
+                setActiveTab("registry");
+              }}
+            />
+          </div>
+        )}
+
         {/* PAGE 1 COMPONENT: SALES REGISTER SHEET */}
         {activeTab === "registry" && (
           <div className="space-y-6 animate-fadeIn">
             {/* Table actions header */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Coordinator Active Student Registry</h3>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Click on any candidate record row to immediately navigate to their profile details page.</p>
+                <h3 className="text-base font-bold text-slate-900">Coordinator Active Student Registry</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Click on any candidate record row to immediately navigate to their profile details page.</p>
               </div>
               <button
                 onClick={triggerCSVDownload}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center justify-center gap-2 transition-colors shadow-xs"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-xs cursor-pointer"
               >
                 <Download className="h-4 w-4" />
                 Export Checked CSV
@@ -1388,118 +1447,143 @@ export default function App() {
             </div>
 
             {/* Active search filter details */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm flex flex-wrap gap-4 items-center">
-              <div className="relative flex-1 min-w-[240px]">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
-                <input
-                  type="text"
-                  placeholder="Filter grid by full name or registration ID..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchName(e.target.value)}
-                  className="pl-9 pr-4 py-1.5 w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:outline-hidden text-slate-800 dark:text-slate-100"
-                />
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Filter registry by student name, roll number, mobile, email..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchName(e.target.value)}
+                    className="pl-9 pr-4 py-2 w-full bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden text-slate-800 font-medium"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchName("")}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      title="Clear search"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {hasActiveFilters && (
+                  <button
+                    onClick={handleClearAllFilters}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-full text-xs font-semibold transition-all shadow-2xs cursor-pointer animate-fadeIn shrink-0"
+                    title="Clear all active filters"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>Clear Filters ({activeFiltersCount})</span>
+                  </button>
+                )}
               </div>
 
-              {/* Enrolled Date Range Filter */}
-              <EnrollmentDatePicker 
-                startDate={filterStartDate}
-                endDate={filterEndDate}
-                onApply={(start, end) => {
-                  setFilterStartDate(start);
-                  setFilterEndDate(end);
-                }}
-              />
+              {/* Multi-Select Filters Row */}
+              <div className="flex flex-wrap items-end gap-3">
+                <MultiSelectDropdown
+                  label="CENTRE"
+                  shortLabel="Centre"
+                  options={centresList}
+                  selected={filterCentres}
+                  onChange={setFilterCentres}
+                  counts={centreCounts}
+                  totalCount={studentsForCentre.length}
+                />
 
-              <SearchableDropdown
-                label="Centre Name"
-                options={centresList}
-                value={filterCentre}
-                onChange={setFilterCentre}
-                counts={centreCounts}
-                totalCount={studentsForCentre.length}
-                placeholder="-Select Centre Name-"
-              />
+                <MultiSelectDropdown
+                  label="BATCH"
+                  shortLabel="Batch"
+                  options={batchesList}
+                  selected={filterBatches}
+                  onChange={setFilterBatches}
+                  counts={batchCounts}
+                  totalCount={studentsForBatch.length}
+                />
 
-              <SearchableDropdown
-                label="Colleges"
-                options={collegesList}
-                value={filterCollege}
-                onChange={setFilterCollege}
-                counts={collegeCounts}
-                totalCount={studentsForCollege.length}
-                placeholder="-Select College-"
-              />
+                <MultiSelectDropdown
+                  label="STATE"
+                  shortLabel="State"
+                  options={statesList}
+                  selected={filterStates}
+                  onChange={setFilterStates}
+                  counts={stateCounts}
+                  totalCount={studentsForState.length}
+                />
 
-              <SearchableDropdown
-                label="Districts"
-                options={districtsList}
-                value={filterDistrict}
-                onChange={setFilterDistrict}
-                counts={districtCounts}
-                totalCount={studentsForDistrict.length}
-                placeholder="-Select District-"
-              />
+                <MultiSelectDropdown
+                  label="DISTRICT"
+                  shortLabel="District"
+                  options={districtsList}
+                  selected={filterDistricts}
+                  onChange={setFilterDistricts}
+                  counts={districtCounts}
+                  totalCount={studentsForDistrict.length}
+                />
 
-              <SearchableDropdown
-                label="States"
-                options={statesList}
-                value={filterState}
-                onChange={setFilterState}
-                counts={stateCounts}
-                totalCount={studentsForState.length}
-                placeholder="-Select State-"
-              />
+                <MultiSelectDropdown
+                  label="COLLEGE"
+                  shortLabel="College"
+                  options={collegesList}
+                  selected={filterColleges}
+                  onChange={setFilterColleges}
+                  counts={collegeCounts}
+                  totalCount={studentsForCollege.length}
+                />
 
-              <SearchableDropdown
-                label="Placed Statuses"
-                options={placedStatusList}
-                value={filterPlacedStatus}
-                onChange={setFilterPlacedStatus}
-                counts={placedStatusCounts}
-                totalCount={studentsForPlacedStatus.length}
-                placeholder="-Select Placed Status-"
-              />
+                <MultiSelectDropdown
+                  label="PLACED STATUS"
+                  shortLabel="Placed"
+                  options={placedStatusList}
+                  selected={filterPlacedStatuses}
+                  onChange={setFilterPlacedStatuses}
+                  counts={placedStatusCounts}
+                  totalCount={studentsForPlacedStatus.length}
+                />
 
-              <SearchableDropdown
-                label="Batches"
-                options={batchesList}
-                value={filterBatch}
-                onChange={setFilterBatch}
-                counts={batchCounts}
-                totalCount={studentsForBatch.length}
-                placeholder="-Select Batch-"
-              />
+                <MultiSelectDropdown
+                  label="JOB TRACK"
+                  shortLabel="Track"
+                  options={tracksList}
+                  selected={filterTracks}
+                  onChange={setFilterTracks}
+                  counts={trackCounts}
+                  totalCount={studentsForTrack.length}
+                  optionFormatter={(track) => track.replace(/_/g, " ")}
+                />
 
-              {hasActiveFilters && (
-                <button
-                  onClick={handleClearAllFilters}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/50 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer animate-fadeIn"
-                  title="Clear all active filters"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  <span>Clear Filters ({activeFiltersCount})</span>
-                </button>
-              )}
+                <EnrollmentDatePicker 
+                  label="ENROLLED DATE"
+                  startDate={filterStartDate}
+                  endDate={filterEndDate}
+                  onApply={(start, end) => {
+                    setFilterStartDate(start);
+                    setFilterEndDate(end);
+                  }}
+                />
+              </div>
             </div>
 
             {/* Grid table representation */}
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-50/70 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider text-[10px]">
-                      <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">Your Full Name</th>
-                      <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">Student ID</th>
-                      <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">Batch Details</th>
-                      <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">Centre Name</th>
-                      <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">District</th>
-                      <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">State</th>
-                      <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">Graduation College / University Name</th>
-                      <th className="py-3.5 px-4 text-slate-600 dark:text-slate-300">Year Of Passing</th>
+                    <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                      <th className="py-3.5 px-4 text-slate-500">Your Full Name</th>
+                      <th className="py-3.5 px-4 text-slate-500">Student ID</th>
+                      <th className="py-3.5 px-4 text-slate-500">Batch Details</th>
+                      <th className="py-3.5 px-4 text-slate-500">Centre Name</th>
+                      <th className="py-3.5 px-4 text-slate-500">District</th>
+                      <th className="py-3.5 px-4 text-slate-500">State</th>
+                      <th className="py-3.5 px-4 text-slate-500">Graduation College / University Name</th>
+                      <th className="py-3.5 px-4 text-slate-500 text-center">Year Of Passing</th>
                       <th className="py-3.5 px-4"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-300">
+                  <tbody className="divide-y divide-slate-100 font-normal text-slate-600">
                     {paginatedRegistryStudents.length > 0 ? (
                       paginatedRegistryStudents.map(student => (
                         <tr
@@ -1508,57 +1592,44 @@ export default function App() {
                             setSelectedStudentId(student.studentId);
                             setActiveTab("profiles");
                           }}
-                          className="hover:bg-blue-50/30 dark:hover:bg-blue-950/20 cursor-pointer transition-colors"
+                          className="hover:bg-indigo-50/30 cursor-pointer transition-colors"
                         >
-                          <td className="py-3 px-4 text-slate-900 dark:text-slate-100 font-bold flex items-center gap-2.5">
-                            <div className="relative h-7 w-7 shrink-0">
-                              {student.profilePhoto ? (
-                                <img
-                                  src={student.profilePhoto}
-                                  alt={student.fullName}
-                                  referrerPolicy="no-referrer"
-                                  className="h-7 w-7 rounded-full object-cover border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800"
-                                  onError={(e) => {
-                                    const target = e.target as HTMLImageElement;
-                                    if (!target.src.includes("/api/zoho/image")) {
-                                      target.src = `/api/zoho/image?url=${encodeURIComponent(student.profilePhoto!)}`;
-                                    } else {
-                                      target.style.display = "none";
-                                      const fallback = target.nextElementSibling as HTMLElement;
-                                      if (fallback) fallback.classList.remove("hidden");
-                                    }
-                                  }}
-                                />
-                              ) : null}
-                              <div className={`h-7 w-7 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-[10px] text-slate-655 dark:text-slate-350 border border-slate-200 dark:border-slate-700 ${student.profilePhoto ? "hidden" : ""}`}>
-                                {student.fullName.charAt(0)}
-                              </div>
+                          <td className="py-3 px-4 text-slate-900 font-semibold flex items-center gap-2">
+                            <div className="h-6 w-6 bg-indigo-50 text-indigo-700 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0 border border-indigo-200">
+                              {student.fullName.charAt(0)}
                             </div>
                             <span className="truncate">{student.fullName}</span>
                           </td>
-                          <td className="py-3 px-4 font-mono font-semibold text-blue-600 dark:text-blue-400">{student.studentId}</td>
-                          <td className="py-3 px-4 text-slate-600 dark:text-slate-450">{student.batchDetails || "—"}</td>
+                          <td className="py-3 px-4 font-mono font-medium text-indigo-600">{student.studentId}</td>
+                          <td className="py-3 px-4">
+                            <span className="font-mono font-semibold text-slate-800">{student.batchDetails || "—"}</span>
+                            {student.batchTiming && (
+                              <span className="block text-[10px] text-slate-500 font-normal whitespace-nowrap">
+                                {student.batchTiming}
+                              </span>
+                            )}
+                          </td>
                           <td className="py-3 px-4">
                             {student.centreName ? (
-                              <span className="bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                              <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded-lg border border-indigo-200">
                                 {student.centreName}
                               </span>
                             ) : (
                               <span className="text-slate-400">—</span>
                             )}
                           </td>
-                          <td className="py-3 px-4 text-slate-600 dark:text-slate-450">{student.district || "—"}</td>
-                          <td className="py-3 px-4 text-slate-600 dark:text-slate-450">{student.state || "—"}</td>
-                          <td className="py-3 px-4 max-w-xs truncate text-slate-600 dark:text-slate-450" title={student.graduationCollegeName}>{student.graduationCollegeName || "—"}</td>
-                          <td className="py-3 px-4 text-center text-slate-600 dark:text-slate-450">{student.graduationYearOfPassing || "—"}</td>
+                          <td className="py-3 px-4 text-slate-600">{student.district || "—"}</td>
+                          <td className="py-3 px-4 text-slate-600">{student.state || "—"}</td>
+                          <td className="py-3 px-4 max-w-xs truncate text-slate-600" title={student.graduationCollegeName}>{student.graduationCollegeName || "—"}</td>
+                          <td className="py-3 px-4 text-center text-slate-600 font-mono">{student.graduationYearOfPassing || "—"}</td>
                           <td className="py-3 px-4 text-slate-400">
-                            <ChevronRight className="h-4 w-4 text-slate-350 dark:text-slate-600" />
+                            <ChevronRight className="h-4 w-4 text-slate-400" />
                           </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={9} className="py-12 text-center text-slate-400 dark:text-slate-600 font-bold">
+                        <td colSpan={9} className="py-12 text-center text-slate-400 font-semibold">
                           No matching active student profiles detected for current criteria.
                         </td>
                       </tr>
@@ -1569,13 +1640,13 @@ export default function App() {
 
               {/* 20-Records-Per-Page Pagination Toolbar */}
               {totalRegistryRecords > 0 && (
-                <div className="bg-slate-50/70 dark:bg-slate-800/50 px-4 py-3 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                  <div className="text-slate-500 dark:text-slate-400 font-medium">
-                    Showing <span className="font-bold text-slate-800 dark:text-slate-200">{(validCurrentPage - 1) * PAGE_SIZE + 1}</span> to{" "}
-                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                <div className="bg-slate-50/80 px-4 py-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                  <div className="text-slate-500 font-normal">
+                    Showing <span className="font-bold text-slate-800">{(validCurrentPage - 1) * PAGE_SIZE + 1}</span> to{" "}
+                    <span className="font-bold text-slate-800">
                       {Math.min(validCurrentPage * PAGE_SIZE, totalRegistryRecords)}
                     </span>{" "}
-                    of <span className="font-bold text-slate-800 dark:text-slate-200">{totalRegistryRecords}</span> students (Page {validCurrentPage} of {totalRegistryPages})
+                    of <span className="font-bold text-slate-800">{totalRegistryRecords}</span> students (Page {validCurrentPage} of {totalRegistryPages})
                   </div>
 
                   <div className="flex items-center gap-1.5 flex-wrap justify-center">
@@ -1584,7 +1655,7 @@ export default function App() {
                       type="button"
                       onClick={() => setCurrentPage(1)}
                       disabled={validCurrentPage === 1}
-                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-750 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                      className="p-1.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
                       title="First Page"
                     >
                       <ChevronsLeft className="h-4 w-4" />
@@ -1595,7 +1666,7 @@ export default function App() {
                       type="button"
                       onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                       disabled={validCurrentPage === 1}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-750 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors font-semibold"
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors font-semibold"
                     >
                       <ChevronLeft className="h-4 w-4" />
                       <span>Previous</span>
@@ -1630,10 +1701,10 @@ export default function App() {
                               key={page}
                               type="button"
                               onClick={() => setCurrentPage(page)}
-                              className={`min-w-[30px] h-7 px-2 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
+                              className={`min-w-[32px] h-8 px-2 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
                                 isCurrent
-                                  ? "bg-blue-600 text-white shadow-xs"
-                                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                                  ? "bg-indigo-600 text-white shadow-xs"
+                                  : "text-slate-600 hover:bg-slate-100 bg-white border border-slate-200"
                               }`}
                             >
                               {page}
@@ -1648,7 +1719,7 @@ export default function App() {
                       type="button"
                       onClick={() => setCurrentPage(p => Math.min(totalRegistryPages, p + 1))}
                       disabled={validCurrentPage === totalRegistryPages}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-750 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors font-semibold"
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors font-semibold"
                     >
                       <span>Next</span>
                       <ChevronRight className="h-4 w-4" />
@@ -1659,7 +1730,7 @@ export default function App() {
                       type="button"
                       onClick={() => setCurrentPage(totalRegistryPages)}
                       disabled={validCurrentPage === totalRegistryPages}
-                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-750 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                      className="p-1.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
                       title="Last Page"
                     >
                       <ChevronsRight className="h-4 w-4" />
@@ -1675,10 +1746,10 @@ export default function App() {
         {activeTab === "profiles" && (
           <div className="space-y-6 animate-fadeIn">
             {/* Profile Pre-Selector drop list */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <User className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                <span className="text-sm font-bold text-slate-800 dark:text-slate-200">Select Student Portfolio</span>
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-2.5">
+                <User className="h-5 w-5 text-indigo-600" />
+                <span className="text-sm font-bold text-slate-900">Select Student Portfolio</span>
               </div>
               <SearchableDropdown
                 label="Student Portfolios"
@@ -1706,17 +1777,17 @@ export default function App() {
         {/* PAGE 2 TAB: SALES CO-PILOT AI BOT CHAT */}
         {activeTab === "chatbot" && (
           <div className="space-y-6 animate-fadeIn">
-            <div className="bg-blue-600/5 dark:bg-blue-955/10 border border-blue-105/40 dark:border-blue-900/40 rounded-xl px-5 py-4 flex items-center justify-between gap-4">
+            <div className="bg-indigo-50/70 border border-indigo-100 rounded-2xl px-6 py-5 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold">
+                <div className="h-10 w-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center font-bold shadow-xs">
                   AI
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">AI Student Assistant (Page 2 Memory Channel)</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-450 mt-0.5">Under Page 2 Guidelines, the AI is programmed with the precise active memory of the student database sheet currently active.</p>
+                  <h3 className="text-sm font-bold text-slate-900">AI Student Assistant (Query & Analytics Co-pilot)</h3>
+                  <p className="text-xs text-slate-500 mt-0.5 font-normal">Programmed with real-time semantic access to the active student database records.</p>
                 </div>
               </div>
-              <div className="hidden sm:block text-xs font-bold text-blue-700 dark:text-blue-400 px-3 py-1 bg-blue-50 dark:bg-blue-950/50 rounded-lg">
+              <div className="hidden sm:block text-xs font-bold text-indigo-700 px-3 py-1 bg-white border border-indigo-200 rounded-lg shadow-2xs">
                 Model: Gemini 2.5 Flash
               </div>
             </div>

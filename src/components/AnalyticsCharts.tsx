@@ -34,7 +34,7 @@ const CustomBarWithRefundIndicator = (props: any) => {
   if (!height || height <= 0) return null;
 
   if (!hasRefunds) {
-    // Pure active batch (No refunds) - Solid blue bar with rounded top
+    // Pure active batch (No refunds) - Solid indigo bar with rounded top
     return (
       <path
         d={`M${x},${y + height} 
@@ -43,13 +43,12 @@ const CustomBarWithRefundIndicator = (props: any) => {
             L${x + width - radius},${y} 
             Q${x + width},${y} ${x + width},${y + radius} 
             L${x + width},${y + height} Z`}
-        fill="#2563eb"
+        fill="#4f46e5"
       />
     );
   }
 
-  // Has refunds: Show red color in the bar!
-  // Top cap is vibrant red (#ef4444) showing refunded students, body is blue (#2563eb)
+  // Has refunds: Top cap is rose (#f43f5e) showing refunded students, body is indigo (#4f46e5)
   const capHeight = Math.max(6, Math.min(14, Math.round(height * 0.15)));
   const blueHeight = Math.max(0, height - capHeight);
   const capY = y;
@@ -57,17 +56,17 @@ const CustomBarWithRefundIndicator = (props: any) => {
 
   return (
     <g>
-      {/* Blue body for active students */}
+      {/* Indigo body for active students */}
       {blueHeight > 0 && (
         <rect
           x={x}
           y={blueY}
           width={width}
           height={blueHeight}
-          fill="#2563eb"
+          fill="#4f46e5"
         />
       )}
-      {/* Red top cap showing refunded students in the batch */}
+      {/* Rose top cap showing refunded students in the batch */}
       <path
         d={`M${x},${blueY} 
             L${x},${capY + radius} 
@@ -75,7 +74,7 @@ const CustomBarWithRefundIndicator = (props: any) => {
             L${x + width - radius},${capY} 
             Q${x + width},${capY} ${x + width},${capY + radius} 
             L${x + width},${blueY} Z`}
-        fill="#ef4444"
+        fill="#f43f5e"
       />
     </g>
   );
@@ -149,20 +148,20 @@ export function AnalyticsCharts({ students, isAdmin = false }: AnalyticsChartsPr
   }, [students]);
 
   return (
-    <div className="w-full bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+    <div className="w-full bg-white border border-slate-200/90 rounded-2xl p-6 shadow-sm">
       <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
           <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
-            <BarChart3 className="h-4 w-4 text-blue-600" />
+            <BarChart3 className="h-4 w-4 text-indigo-600" />
             Batch Counts
           </h4>
-          <p className="text-[10px] text-slate-400 mt-0.5">
+          <p className="text-[10px] text-slate-400 mt-0.5 font-normal">
             Active student count on top of each bar. Red cap indicates batch has refunded students.
           </p>
         </div>
         <div className="flex items-center gap-3 text-[11px] text-slate-500 font-medium">
           <span className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-xs bg-blue-600 inline-block"></span>
+            <span className="h-2.5 w-2.5 rounded-xs bg-indigo-600 inline-block"></span>
             Active Only
           </span>
           <span className="flex items-center gap-1.5">
@@ -191,26 +190,26 @@ export function AnalyticsCharts({ students, isAdmin = false }: AnalyticsChartsPr
                 tickLine={false} 
               />
               <Tooltip 
-                cursor={{ fill: "rgba(59, 130, 246, 0.06)" }}
+                cursor={{ fill: "rgba(99, 102, 241, 0.06)" }}
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
                     const data = payload[0].payload;
                     return (
-                      <div className="bg-slate-900 text-white px-3.5 py-2.5 rounded-lg border border-slate-700/80 shadow-2xl text-xs space-y-1.5 min-w-[145px]">
+                      <div className="bg-slate-900 text-white px-3.5 py-2.5 rounded-xl border border-slate-700/80 shadow-2xl text-xs space-y-1.5 min-w-[145px]">
                         <div className="font-bold text-slate-200 border-b border-slate-700/80 pb-1 flex items-center justify-between">
-                          <span className="text-blue-400 font-semibold">Batch {data.name}</span>
+                          <span className="text-indigo-400 font-semibold font-mono">Batch {data.name}</span>
                           <span className="text-[10px] font-medium text-slate-400">Total: {data.total}</span>
                         </div>
                         <div className="space-y-1 pt-0.5 text-[11px]">
                           <div className="flex items-center justify-between gap-3">
-                            <span className="flex items-center gap-1.5 text-slate-300">
-                              <span className="h-2 w-2 rounded-full bg-blue-500 inline-block"></span>
+                            <span className="flex items-center gap-1.5 text-slate-300 font-medium">
+                              <span className="h-2 w-2 rounded-full bg-indigo-500 inline-block"></span>
                               Active:
                             </span>
                             <span className="font-bold text-white font-mono">{data.active}</span>
                           </div>
                           <div className="flex items-center justify-between gap-3">
-                            <span className="flex items-center gap-1.5 text-slate-300">
+                            <span className="flex items-center gap-1.5 text-slate-300 font-medium">
                               <span className="h-2 w-2 rounded-full bg-rose-500 inline-block"></span>
                               Refunded:
                             </span>

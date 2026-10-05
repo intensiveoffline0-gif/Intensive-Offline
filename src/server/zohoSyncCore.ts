@@ -119,6 +119,16 @@ export function extractPhotoUrl(raw: string): string {
   return m ? m[0] : (raw.startsWith("http") ? raw : "");
 }
 
+export function getBatchTimingSlot(batchDetails?: string, fallback?: string): string {
+  if (!batchDetails) return fallback || "10:30 AM - 01:30 PM";
+  const b = batchDetails.trim().toUpperCase();
+  if (b.startsWith("E")) return "07:00 AM - 10:00 AM";
+  if (b.startsWith("M")) return "10:30 AM - 01:30 PM";
+  if (b.startsWith("A")) return "02:30 PM - 05:30 PM";
+  if (b.startsWith("N")) return "06:00 PM - 09:00 PM";
+  return fallback || "10:30 AM - 01:30 PM";
+}
+
 export async function fetchLiveReport(reportUrl: string): Promise<string> {
   let lastError: any = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -319,12 +329,12 @@ export async function syncWithZohoLive(clientSyncTime?: string): Promise<{
       "Active Status": masterStatus,
       "Enrolled on": enrolledOn || (pr ? getProfVal(pr, "orientation day") : "") || existing?.["Enrolled on"] || "",
       "Batch Details": batch || (pr ? getProfVal(pr, "batch details") : "") || existing?.["Batch Details"] || "",
-      "Batch Timing": existing?.["Batch Timing"] || "9:00 AM - 1:00 PM",
+      "Batch Timing": getBatchTimingSlot(batch || (pr ? getProfVal(pr, "batch details") : ""), existing?.["Batch Timing"]),
       "Gender": gender || existing?.["Gender"] || "",
       "Preferred Job Track": track || (pr ? getProfVal(pr, "graduation stream") : "") || existing?.["Preferred Job Track"] || "",
       "Your Personal Mail ID": email || (pr ? getProfVal(pr, "your personal mail id") : "") || existing?.["Your Personal Mail ID"] || "",
       "Permanent Address District": (pr ? getProfVal(pr, "permanent address district") : "") || existing?.["Permanent Address District"] || "",
-      "Permanent State": state || (pr ? getProfVal(pr, "permanent state") : "") || existing?.["Permanent State"] || "",
+      "Permanent State": (pr ? getProfVal(pr, "permanent state") : "") || state || existing?.["Permanent State"] || "",
       "Permanent Address Pincode": existing?.["Permanent Address Pincode"] || "",
       "Highest Qualification": (pr ? getProfVal(pr, "graduation degree name") : "") || existing?.["Highest Qualification"] || "",
       "Graduation Degree Name": (pr ? getProfVal(pr, "graduation degree name") : "") || existing?.["Graduation Degree Name"] || "",
@@ -372,7 +382,7 @@ export async function syncWithZohoLive(clientSyncTime?: string): Promise<{
       "Active Status": st,
       "Enrolled on": getProfVal(pr, "orientation day"),
       "Batch Details": getProfVal(pr, "batch details"),
-      "Batch Timing": "9:00 AM - 1:00 PM",
+      "Batch Timing": getBatchTimingSlot(getProfVal(pr, "batch details")),
       "Gender": "",
       "Preferred Job Track": getProfVal(pr, "graduation stream"),
       "Your Personal Mail ID": getProfVal(pr, "your personal mail id"),

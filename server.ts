@@ -241,6 +241,16 @@ function parseServerCSVRows(csvText: string): string[][] {
   }));
 }
 
+function getBatchTimingSlot(batchDetails?: string, fallback?: string): string {
+  if (!batchDetails) return fallback || "10:30 AM - 01:30 PM";
+  const b = batchDetails.trim().toUpperCase();
+  if (b.startsWith("E")) return "07:00 AM - 10:00 AM";
+  if (b.startsWith("M")) return "10:30 AM - 01:30 PM";
+  if (b.startsWith("A")) return "02:30 PM - 05:30 PM";
+  if (b.startsWith("N")) return "06:00 PM - 09:00 PM";
+  return fallback || "10:30 AM - 01:30 PM";
+}
+
 function mapZohoRecordToRow(r: any): Record<string, string> {
   const studentId = extractZohoStudentId(r.ID_Student_Name, r.zohoRecId || r.ID);
   const fullName = r.Your_Full_Name || (r.ID_Student_Name ? r.ID_Student_Name.replace(/^[^-]+-\s*/, "").trim() : "");
@@ -257,7 +267,7 @@ function mapZohoRecordToRow(r: any): Record<string, string> {
     "Active Status": r.Active_Status || "Active",
     "Enrolled on": r.Orientation_Day || "",
     "Batch Details": r.Batch_Details || "",
-    "Batch Timing": r.Batch_Timing || "9:00 AM - 1:00 PM",
+    "Batch Timing": getBatchTimingSlot(r.Batch_Details, r.Batch_Timing),
     "Gender": r.Gender || "",
     "Preferred Job Track": r.Preferred_Job_Track || r.Graduation_Stream_new || "",
     "Your Personal Mail ID": email,
@@ -547,12 +557,12 @@ async function syncWithZohoLive(clientSyncTime?: string): Promise<{
       "Active Status": masterStatus,
       "Enrolled on": enrolledOn || (pr ? getProfVal(pr, "orientation day") : "") || existing?.["Enrolled on"] || "",
       "Batch Details": batch || (pr ? getProfVal(pr, "batch details") : "") || existing?.["Batch Details"] || "",
-      "Batch Timing": existing?.["Batch Timing"] || "9:00 AM - 1:00 PM",
+      "Batch Timing": getBatchTimingSlot(batch || (pr ? getProfVal(pr, "batch details") : ""), existing?.["Batch Timing"]),
       "Gender": gender || existing?.["Gender"] || "",
       "Preferred Job Track": track || (pr ? getProfVal(pr, "graduation stream") : "") || existing?.["Preferred Job Track"] || "",
       "Your Personal Mail ID": email || (pr ? getProfVal(pr, "your personal mail id") : "") || existing?.["Your Personal Mail ID"] || "",
       "Permanent Address District": (pr ? getProfVal(pr, "permanent address district") : "") || existing?.["Permanent Address District"] || "",
-      "Permanent State": state || (pr ? getProfVal(pr, "permanent state") : "") || existing?.["Permanent State"] || "",
+      "Permanent State": (pr ? getProfVal(pr, "permanent state") : "") || state || existing?.["Permanent State"] || "",
       "Permanent Address Pincode": existing?.["Permanent Address Pincode"] || "",
       "Highest Qualification": (pr ? getProfVal(pr, "graduation degree name") : "") || existing?.["Highest Qualification"] || "",
       "Graduation Degree Name": (pr ? getProfVal(pr, "graduation degree name") : "") || existing?.["Graduation Degree Name"] || "",
@@ -601,7 +611,7 @@ async function syncWithZohoLive(clientSyncTime?: string): Promise<{
       "Active Status": st,
       "Enrolled on": getProfVal(pr, "orientation day"),
       "Batch Details": getProfVal(pr, "batch details"),
-      "Batch Timing": "9:00 AM - 1:00 PM",
+      "Batch Timing": getBatchTimingSlot(getProfVal(pr, "batch details")),
       "Gender": "",
       "Preferred Job Track": getProfVal(pr, "graduation stream"),
       "Your Personal Mail ID": getProfVal(pr, "your personal mail id"),
@@ -772,6 +782,81 @@ app.get("/api/zoho/image", async (req, res) => {
   } catch (err: any) {
     console.error("Zoho image proxy error:", err);
     return res.status(500).send("Internal server error proxying image");
+  }
+});
+
+// Dedicated photo endpoint by Student ID (e.g. /api/zoho/photo/I25A1002)
+const studentPhotoUrlMap = new Map<string, string>();
+const photoBufferCache = new Map<string, { buffer: Buffer; contentType: string }>();
+
+function refreshStudentPhotoMap(csv: string) {
+  try {
+    const rows = parseServerCSVRows(csv);
+    if (rows.length < 2) return;
+    const headers = rows[0].map(h => h.trim().toLowerCase());
+    const idIdx = headers.findIndex(h => h === "student id" || h.includes("student id"));
+    const photoIdx = headers.findIndex(h => h === "profile photo" || h.includes("photo"));
+    if (idIdx === -1 || photoIdx === -1) return;
+    for (let i = 1; i < rows.length; i++) {
+      const sid = (rows[i][idIdx] || "").trim().toUpperCase();
+      const pUrl = (rows[i][photoIdx] || "").trim();
+      if (sid && pUrl && pUrl.startsWith("http")) {
+        studentPhotoUrlMap.set(sid, pUrl);
+      }
+    }
+    console.log(`[Photo Sync] Mapped ${studentPhotoUrlMap.size} student photos from database.`);
+  } catch (err) {
+    console.warn("Could not populate studentPhotoUrlMap:", err);
+  }
+}
+
+// Initial populate of student photo map
+try {
+  const initCsv = fs.existsSync(CSV_FILE_PATH) ? fs.readFileSync(CSV_FILE_PATH, "utf8") : ZOHO_STUDENTS_CSV;
+  refreshStudentPhotoMap(initCsv);
+} catch (_) {}
+
+app.get("/api/zoho/photo/:studentId", async (req, res) => {
+  try {
+    const studentId = (req.params.studentId || "").trim().toUpperCase();
+    if (!studentId) return res.status(400).send("Student ID required");
+
+    let photoUrl = studentPhotoUrlMap.get(studentId);
+    if (!photoUrl && studentPhotoUrlMap.size === 0) {
+      const currentCsv = fs.existsSync(CSV_FILE_PATH) ? fs.readFileSync(CSV_FILE_PATH, "utf8") : ZOHO_STUDENTS_CSV;
+      refreshStudentPhotoMap(currentCsv);
+      photoUrl = studentPhotoUrlMap.get(studentId);
+    }
+
+    if (!photoUrl) {
+      return res.status(404).send("No profile photo found for student");
+    }
+
+    // Check memory buffer cache
+    const cached = photoBufferCache.get(studentId);
+    if (cached) {
+      res.setHeader("Content-Type", cached.contentType);
+      res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+      return res.send(cached.buffer);
+    }
+
+    const upstream = await fetch(photoUrl);
+    if (!upstream.ok) {
+      return res.status(upstream.status).send("Failed to fetch image from Zoho");
+    }
+
+    const contentType = upstream.headers.get("content-type") || "image/jpeg";
+    const arr = await upstream.arrayBuffer();
+    const buffer = Buffer.from(arr);
+
+    photoBufferCache.set(studentId, { buffer, contentType });
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+    return res.send(buffer);
+  } catch (err: any) {
+    console.error("Error serving student photo for " + req.params.studentId + ":", err);
+    return res.status(500).send("Internal server error fetching photo");
   }
 });
 
