@@ -27,17 +27,23 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
   const isRefunded = student.activeStatus.toLowerCase() === "refunded";
   const timingSlot = getBatchTimingSlot(student.batchDetails, student.batchTiming);
 
+  const directPhotoUrl = student.profilePhoto?.trim();
+  const proxyPhotoUrl = `/api/zoho/photo/${encodeURIComponent(student.studentId)}`;
+
   const [imgError, setImgError] = useState(false);
-  const [currentImgSrc, setCurrentImgSrc] = useState<string>(`/api/zoho/photo/${encodeURIComponent(student.studentId)}`);
+  const [currentImgSrc, setCurrentImgSrc] = useState<string>(directPhotoUrl || proxyPhotoUrl);
 
   useEffect(() => {
     setImgError(false);
-    setCurrentImgSrc(`/api/zoho/photo/${encodeURIComponent(student.studentId)}`);
-  }, [student.studentId]);
+    setCurrentImgSrc(directPhotoUrl || proxyPhotoUrl);
+  }, [student.studentId, directPhotoUrl]);
 
   const handleImageError = () => {
-    if (student.profilePhoto && currentImgSrc !== student.profilePhoto) {
-      setCurrentImgSrc(student.profilePhoto);
+    // Multi-tier resilient fallback: direct CDN -> proxy by ID -> proxy by raw URL -> vector SVG badge
+    if (directPhotoUrl && currentImgSrc === directPhotoUrl) {
+      setCurrentImgSrc(proxyPhotoUrl);
+    } else if (directPhotoUrl && currentImgSrc !== `/api/zoho/image?url=${encodeURIComponent(directPhotoUrl)}`) {
+      setCurrentImgSrc(`/api/zoho/image?url=${encodeURIComponent(directPhotoUrl)}`);
     } else {
       setImgError(true);
     }

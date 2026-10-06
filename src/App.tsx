@@ -1597,13 +1597,18 @@ export default function App() {
                           <td className="py-3 px-4 text-slate-900 font-semibold flex items-center gap-2.5">
                             <div className="relative h-7 w-7 rounded-full overflow-hidden bg-indigo-50 text-indigo-700 font-bold text-[10px] shrink-0 border border-indigo-200 flex items-center justify-center">
                               <img
-                                src={`/api/zoho/photo/${encodeURIComponent(student.studentId)}`}
+                                src={student.profilePhoto || `/api/zoho/photo/${encodeURIComponent(student.studentId)}`}
                                 alt=""
                                 loading="lazy"
                                 referrerPolicy="no-referrer"
                                 className="absolute inset-0 h-full w-full object-cover"
                                 onError={(e) => {
-                                  (e.target as HTMLElement).style.display = "none";
+                                  const target = e.target as HTMLImageElement;
+                                  if (student.profilePhoto && target.src === student.profilePhoto) {
+                                    target.src = `/api/zoho/photo/${encodeURIComponent(student.studentId)}`;
+                                  } else {
+                                    target.style.display = "none";
+                                  }
                                 }}
                               />
                               <span>{student.fullName.charAt(0)}</span>
