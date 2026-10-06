@@ -4,6 +4,16 @@ import { ZOHO_STUDENTS_CSV } from "../data/zohoStudentsCSV";
 
 export const MASTER_ENROLLMENT_REPORT_CSV_URL = "https://creatorapp.zohopublic.in/nxtwave/intensive-offline/csv/Students_Data_Report/y4KgkdzE1CXYTUnwEBs1zantAYKaBw108xs9z3njNj6V2sB3hS7GBuaGjkTVHV8wZqMVzGRNtVQpp3O5sAAmF3dQWYD8T5f6UpNh";
 export const STUDENT_PROFILES_REPORT_CSV_URL = "https://creatorapp.zohopublic.in/nxtwave/intensive-offline/csv/Student_Profiles_AI_Studio/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0";
+export const STUDENT_PROFILES_REPORT_JSON_URL = "https://creatorapp.zohopublic.in/nxtwave/intensive-offline/json/Student_Profiles_AI_Studio/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0";
+export const ZOHO_PROFILES_PERMA_KEY = "CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0";
+
+export function buildZohoDownloadUrl(recordId: string, fieldName: "Profile_Photo" | "Your_Resume", rawPath: string): string {
+  if (!rawPath || !recordId) return "";
+  if (rawPath.startsWith("http")) return rawPath;
+  const filename = rawPath.split("/image/")[1] || rawPath.split("/download/")[1] || rawPath.split("/").pop();
+  if (!filename) return "";
+  return `https://creatorapp.zohopublic.in/nxtwave/intensive-offline/report/Student_Profiles_AI_Studio/${recordId}/${fieldName}/download-file/${ZOHO_PROFILES_PERMA_KEY}?filepath=/${filename}&digestValue=eyJsYW5ndWFnZSI6IiJ9`;
+}
 
 export const CANONICAL_CSV_HEADERS = [
   "Full Name",
@@ -182,19 +192,61 @@ export async function syncWithZohoLive(clientSyncTime?: string): Promise<{
   warning?: string;
 }> {
   let enrollCsvText = "";
-  let profCsvText = "";
+  let profList: any[] = [];
   let fetchWarning = "";
 
   try {
-    const [resEnroll, resProf] = await Promise.all([
+    const [resEnroll, resJson] = await Promise.all([
       fetchLiveReport(MASTER_ENROLLMENT_REPORT_CSV_URL),
-      fetchLiveReport(STUDENT_PROFILES_REPORT_CSV_URL)
+      fetch(STUDENT_PROFILES_REPORT_JSON_URL).then(r => r.json()).catch(() => null)
     ]);
     enrollCsvText = resEnroll;
-    profCsvText = resProf;
+    if (resJson && Array.isArray(resJson.Student_Profiles_AI_Studio)) {
+      profList = resJson.Student_Profiles_AI_Studio;
+    }
   } catch (err: any) {
     console.warn("[Zoho Sync Network Issue]:", err?.message || err);
     fetchWarning = "Zoho Creator connection was temporarily interrupted. Retained current database records.";
+  }
+
+  // Fallback to profiles CSV if JSON was empty
+  if (profList.length === 0) {
+    try {
+      const profCsvText = await fetchLiveReport(STUDENT_PROFILES_REPORT_CSV_URL);
+      const profRows = parseCSVRows(profCsvText);
+      const profHeaders = profRows[0].map(h => h.trim().toLowerCase());
+      const getProfVal = (row: string[], col: string) => {
+        const idx = profHeaders.findIndex(h => h.includes(col.toLowerCase()));
+        return idx !== -1 ? (row[idx] || "").trim() : "";
+      };
+      for (let i = 1; i < profRows.length; i++) {
+        const r = profRows[i];
+        if (!r || r.length <= 1) continue;
+        profList.push({
+          ID_Student_Name: getProfVal(r, "id - student name"),
+          Your_Full_Name: getProfVal(r, "your full name"),
+          Profile_Photo: getProfVal(r, "profile photo"),
+          Your_Personal_Mail_ID: getProfVal(r, "your personal mail id"),
+          Register_Mobile_Number: getProfVal(r, "register mobile number"),
+          Batch_Details: getProfVal(r, "batch details"),
+          Active_Status: getProfVal(r, "active status"),
+          Graduation_College_University_Name1: getProfVal(r, "graduation college / university name"),
+          Graduation_Degree_Name: getProfVal(r, "graduation degree name"),
+          Graduation_Stream_new: getProfVal(r, "graduation stream"),
+          Graduation_Year_of_Passing: getProfVal(r, "graduation year of passing"),
+          Graduation_CGPA_Percentage_Obtained: getProfVal(r, "graduation cgpa / percentage obtained"),
+          Your_Resume: getProfVal(r, "your resume"),
+          Permanent_Address_District: getProfVal(r, "permanent address district"),
+          Permanent_State: getProfVal(r, "permanent state"),
+          Orientation_Day: getProfVal(r, "orientation day"),
+          Placed_Through: getProfVal(r, "placed through"),
+          Placed_Organisation: getProfVal(r, "placed organisation"),
+          External_Placed_Organisation: getProfVal(r, "external placed organisation"),
+          Instructor_Name: getProfVal(r, "instructor name"),
+          Centre_Name: getProfVal(r, "centre name")
+        });
+      }
+    } catch (_) {}
   }
 
   const csvPath = getFilePath("students_dataset.csv");
@@ -206,7 +258,7 @@ export async function syncWithZohoLive(clientSyncTime?: string): Promise<{
     } catch (_) {}
   }
 
-  if (!enrollCsvText || !profCsvText) {
+  if (!enrollCsvText || profList.length === 0) {
     const parsedRows = parseCSVRows(baseCsv);
     const count = Math.max(0, parsedRows.length - 1);
     const formattedDate = clientSyncTime || formatCurrentSyncDate(new Date());
@@ -235,29 +287,20 @@ export async function syncWithZohoLive(clientSyncTime?: string): Promise<{
   }
 
   const enrollRows = parseCSVRows(enrollCsvText);
-  const profRows = parseCSVRows(profCsvText);
-
   const enrollHeaders = enrollRows[0].map(h => h.trim().toLowerCase());
-  const profHeaders = profRows[0].map(h => h.trim().toLowerCase());
 
   const getEnrollVal = (row: string[], col: string) => {
     const idx = enrollHeaders.findIndex(h => h.includes(col.toLowerCase()));
     return idx !== -1 ? (row[idx] || "").trim() : "";
   };
-  const getProfVal = (row: string[], col: string) => {
-    const idx = profHeaders.findIndex(h => h.includes(col.toLowerCase()));
-    return idx !== -1 ? (row[idx] || "").trim() : "";
-  };
 
-  const profMap = new Map<string, string[]>();
-  for (let i = 1; i < profRows.length; i++) {
-    const r = profRows[i];
-    if (!r || r.length <= 1) continue;
-    const idName = getProfVal(r, "id - student name");
+  const profMap = new Map<string, any>();
+  for (const item of profList) {
+    const idName = (item.ID_Student_Name || "").trim();
     const m = idName.match(/\b(I\d{2}[A-Za-z]\d{3,4})\b/i);
     const sid = m ? m[1].toUpperCase() : (idName.split("-")[0] || idName).trim().toUpperCase();
     if (sid) {
-      profMap.set(sid, r);
+      profMap.set(sid, item);
     }
   }
 
@@ -318,97 +361,95 @@ export async function syncWithZohoLive(clientSyncTime?: string): Promise<{
     if (existing) updatedCount++;
     else newCount++;
 
-    const photo = pr ? extractPhotoUrl(getProfVal(pr, "profile photo")) : (existing?.["Profile Photo"] || "");
-    const resume = pr ? extractPhotoUrl(getProfVal(pr, "your resume")) : (existing?.["Resume"] || "");
+    const photo = pr ? (buildZohoDownloadUrl(pr.ID, "Profile_Photo", pr.Profile_Photo) || pr.Profile_Photo) : (existing?.["Profile Photo"] || "");
+    const resume = pr ? (buildZohoDownloadUrl(pr.ID, "Your_Resume", pr.Your_Resume) || pr.Your_Resume) : (existing?.["Resume"] || "");
 
     const studentRow: Record<string, string> = {
-      "Full Name": (pr ? getProfVal(pr, "your full name") : "") || fullName || existing?.["Full Name"] || "",
-      "User ID": (pr ? getProfVal(pr, "instructor name") : "") || sid || existing?.["User ID"] || "",
+      "Full Name": (pr ? pr.Your_Full_Name : "") || fullName || existing?.["Full Name"] || "",
+      "User ID": (pr ? pr.Instructor_Name : "") || sid || existing?.["User ID"] || "",
       "Student ID": sid,
-      "Mobile Number": mobile || (pr ? getProfVal(pr, "register mobile number") : "") || existing?.["Mobile Number"] || "",
+      "Mobile Number": mobile || (pr ? pr.Register_Mobile_Number : "") || existing?.["Mobile Number"] || "",
       "Active Status": masterStatus,
-      "Enrolled on": enrolledOn || (pr ? getProfVal(pr, "orientation day") : "") || existing?.["Enrolled on"] || "",
-      "Batch Details": batch || (pr ? getProfVal(pr, "batch details") : "") || existing?.["Batch Details"] || "",
-      "Batch Timing": getBatchTimingSlot(batch || (pr ? getProfVal(pr, "batch details") : ""), existing?.["Batch Timing"]),
+      "Enrolled on": enrolledOn || (pr ? pr.Orientation_Day : "") || existing?.["Enrolled on"] || "",
+      "Batch Details": batch || (pr ? pr.Batch_Details : "") || existing?.["Batch Details"] || "",
+      "Batch Timing": getBatchTimingSlot(batch || (pr ? pr.Batch_Details : ""), existing?.["Batch Timing"]),
       "Gender": gender || existing?.["Gender"] || "",
-      "Preferred Job Track": track || (pr ? getProfVal(pr, "graduation stream") : "") || existing?.["Preferred Job Track"] || "",
-      "Your Personal Mail ID": email || (pr ? getProfVal(pr, "your personal mail id") : "") || existing?.["Your Personal Mail ID"] || "",
-      "Permanent Address District": (pr ? getProfVal(pr, "permanent address district") : "") || existing?.["Permanent Address District"] || "",
-      "Permanent State": (pr ? getProfVal(pr, "permanent state") : "") || state || existing?.["Permanent State"] || "",
+      "Preferred Job Track": track || (pr ? pr.Graduation_Stream_new : "") || existing?.["Preferred Job Track"] || "",
+      "Your Personal Mail ID": email || (pr ? pr.Your_Personal_Mail_ID : "") || existing?.["Your Personal Mail ID"] || "",
+      "Permanent Address District": (pr ? pr.Permanent_Address_District : "") || existing?.["Permanent Address District"] || "",
+      "Permanent State": (pr ? pr.Permanent_State : "") || state || existing?.["Permanent State"] || "",
       "Permanent Address Pincode": existing?.["Permanent Address Pincode"] || "",
-      "Highest Qualification": (pr ? getProfVal(pr, "graduation degree name") : "") || existing?.["Highest Qualification"] || "",
-      "Graduation Degree Name": (pr ? getProfVal(pr, "graduation degree name") : "") || existing?.["Graduation Degree Name"] || "",
-      "Graduation Stream": (pr ? getProfVal(pr, "graduation stream") : "") || existing?.["Graduation Stream"] || "",
-      "Graduation College / University Name": (pr ? getProfVal(pr, "graduation college / university name") : "") || existing?.["Graduation College / University Name"] || "",
-      "Graduation Year of Passing": (pr ? getProfVal(pr, "graduation year of passing") : "") || existing?.["Graduation Year of Passing"] || "",
-      "Graduation CGPA ": (pr ? getProfVal(pr, "graduation cgpa / percentage obtained") : "") || existing?.["Graduation CGPA "] || "",
+      "Highest Qualification": (pr ? pr.Graduation_Degree_Name : "") || existing?.["Highest Qualification"] || "",
+      "Graduation Degree Name": (pr ? pr.Graduation_Degree_Name : "") || existing?.["Graduation Degree Name"] || "",
+      "Graduation Stream": (pr ? pr.Graduation_Stream_new : "") || existing?.["Graduation Stream"] || "",
+      "Graduation College / University Name": (pr ? pr.Graduation_College_University_Name1 : "") || existing?.["Graduation College / University Name"] || "",
+      "Graduation Year of Passing": (pr ? pr.Graduation_Year_of_Passing : "") || existing?.["Graduation Year of Passing"] || "",
+      "Graduation CGPA ": (pr ? pr.Graduation_CGPA_Percentage_Obtained : "") || existing?.["Graduation CGPA "] || "",
       "Post-Graduation Degree Name": existing?.["Post-Graduation Degree Name"] || "",
       "Post-Graduation Stream": existing?.["Post-Graduation Stream"] || "",
       "Post-Graduation College / University Name": existing?.["Post-Graduation College / University Name"] || "",
       "Post Graduation Year of Passing": existing?.["Post Graduation Year of Passing"] || "",
       "Post Graduation CGPA / Percentage Obtained": existing?.["Post Graduation CGPA / Percentage Obtained"] || "",
-      "Placed Organisation": (pr ? getProfVal(pr, "placed organisation") : "") || existing?.["Placed Organisation"] || "",
-      "External Placed Organisation": (pr ? getProfVal(pr, "external placed organisation") : "") || existing?.["External Placed Organisation"] || "",
-      "Placement Type": (pr ? getProfVal(pr, "placed through") : "") || existing?.["Placement Type"] || "",
+      "Placed Organisation": (pr ? pr.Placed_Organisation : "") || existing?.["Placed Organisation"] || "",
+      "External Placed Organisation": (pr ? pr.External_Placed_Organisation : "") || existing?.["External Placed Organisation"] || "",
+      "Placement Type": (pr ? pr.Placed_Through : "") || existing?.["Placement Type"] || "",
       "Placed Month": existing?.["Placed Month"] || "",
       "CTC(LPA)": existing?.["CTC(LPA)"] || "",
       "Profile Photo": photo,
       "Resume": resume,
-      "Instructor Name": (pr ? getProfVal(pr, "instructor name") : "") || existing?.["Instructor Name"] || "",
-      "Centre Name": centre || (pr ? getProfVal(pr, "centre name") : "") || existing?.["Centre Name"] || ""
+      "Instructor Name": (pr ? pr.Instructor_Name : "") || existing?.["Instructor Name"] || "",
+      "Centre Name": centre || (pr ? pr.Centre_Name : "") || existing?.["Centre Name"] || ""
     };
 
     finalRecords.push(studentRow);
   }
 
-  for (let i = 1; i < profRows.length; i++) {
-    const pr = profRows[i];
-    if (!pr || pr.length <= 1) continue;
-    const idName = getProfVal(pr, "id - student name");
-    const m = idName.match(/\b(I\d{2}[A-Za-z]\d{3,4})\b/i);
-    const sid = m ? m[1].toUpperCase() : (idName.split("-")[0] || idName).trim().toUpperCase();
+  for (const [sid, pr] of profMap.entries()) {
     if (!sid || seenIds.has(sid)) continue;
     seenIds.add(sid);
 
-    const st = getProfVal(pr, "active status") || "Active";
+    const st = pr.Active_Status || "Active";
     if (st.toLowerCase() === "active") totalActive++;
     else if (st.toLowerCase() === "refunded") totalRefunded++;
 
+    const photo = buildZohoDownloadUrl(pr.ID, "Profile_Photo", pr.Profile_Photo) || pr.Profile_Photo || "";
+    const resume = buildZohoDownloadUrl(pr.ID, "Your_Resume", pr.Your_Resume) || pr.Your_Resume || "";
+
     finalRecords.push({
-      "Full Name": getProfVal(pr, "your full name"),
-      "User ID": getProfVal(pr, "instructor name") || sid,
+      "Full Name": pr.Your_Full_Name || "",
+      "User ID": pr.Instructor_Name || sid,
       "Student ID": sid,
-      "Mobile Number": getProfVal(pr, "register mobile number"),
+      "Mobile Number": pr.Register_Mobile_Number || "",
       "Active Status": st,
-      "Enrolled on": getProfVal(pr, "orientation day"),
-      "Batch Details": getProfVal(pr, "batch details"),
-      "Batch Timing": getBatchTimingSlot(getProfVal(pr, "batch details")),
+      "Enrolled on": pr.Orientation_Day || "",
+      "Batch Details": pr.Batch_Details || "",
+      "Batch Timing": getBatchTimingSlot(pr.Batch_Details),
       "Gender": "",
-      "Preferred Job Track": getProfVal(pr, "graduation stream"),
-      "Your Personal Mail ID": getProfVal(pr, "your personal mail id"),
-      "Permanent Address District": getProfVal(pr, "permanent address district"),
-      "Permanent State": getProfVal(pr, "permanent state"),
+      "Preferred Job Track": pr.Graduation_Stream_new || "",
+      "Your Personal Mail ID": pr.Your_Personal_Mail_ID || "",
+      "Permanent Address District": pr.Permanent_Address_District || "",
+      "Permanent State": pr.Permanent_State || "",
       "Permanent Address Pincode": "",
-      "Highest Qualification": getProfVal(pr, "graduation degree name"),
-      "Graduation Degree Name": getProfVal(pr, "graduation degree name"),
-      "Graduation Stream": getProfVal(pr, "graduation stream"),
-      "Graduation College / University Name": getProfVal(pr, "graduation college / university name"),
-      "Graduation Year of Passing": getProfVal(pr, "graduation year of passing"),
-      "Graduation CGPA ": getProfVal(pr, "graduation cgpa / percentage obtained"),
+      "Highest Qualification": pr.Graduation_Degree_Name || "",
+      "Graduation Degree Name": pr.Graduation_Degree_Name || "",
+      "Graduation Stream": pr.Graduation_Stream_new || "",
+      "Graduation College / University Name": pr.Graduation_College_University_Name1 || "",
+      "Graduation Year of Passing": pr.Graduation_Year_of_Passing || "",
+      "Graduation CGPA ": pr.Graduation_CGPA_Percentage_Obtained || "",
       "Post-Graduation Degree Name": "",
       "Post-Graduation Stream": "",
       "Post-Graduation College / University Name": "",
       "Post Graduation Year of Passing": "",
       "Post Graduation CGPA / Percentage Obtained": "",
-      "Placed Organisation": getProfVal(pr, "placed organisation"),
-      "External Placed Organisation": getProfVal(pr, "external placed organisation"),
-      "Placement Type": getProfVal(pr, "placed through"),
+      "Placed Organisation": pr.Placed_Organisation || "",
+      "External Placed Organisation": pr.External_Placed_Organisation || "",
+      "Placement Type": pr.Placed_Through || "",
       "Placed Month": "",
       "CTC(LPA)": "",
-      "Profile Photo": extractPhotoUrl(getProfVal(pr, "profile photo")),
-      "Resume": extractPhotoUrl(getProfVal(pr, "your resume")),
-      "Instructor Name": getProfVal(pr, "instructor name"),
-      "Centre Name": getProfVal(pr, "centre name")
+      "Profile Photo": photo,
+      "Resume": resume,
+      "Instructor Name": pr.Instructor_Name || "",
+      "Centre Name": pr.Centre_Name || ""
     });
   }
 

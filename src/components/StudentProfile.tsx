@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Student } from "../types";
 import { 
   User, Mail, Phone, MapPin, GraduationCap, Calendar, 
@@ -27,6 +27,29 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
   const isRefunded = student.activeStatus.toLowerCase() === "refunded";
   const timingSlot = getBatchTimingSlot(student.batchDetails, student.batchTiming);
 
+  const [imgError, setImgError] = useState(false);
+  const [currentImgSrc, setCurrentImgSrc] = useState<string>(`/api/zoho/photo/${encodeURIComponent(student.studentId)}`);
+
+  useEffect(() => {
+    setImgError(false);
+    setCurrentImgSrc(`/api/zoho/photo/${encodeURIComponent(student.studentId)}`);
+  }, [student.studentId]);
+
+  const handleImageError = () => {
+    if (student.profilePhoto && currentImgSrc !== student.profilePhoto) {
+      setCurrentImgSrc(student.profilePhoto);
+    } else {
+      setImgError(true);
+    }
+  };
+
+  const nameInitials = student.fullName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(w => w[0]?.toUpperCase())
+    .join("") || student.fullName.charAt(0)?.toUpperCase() || "S";
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden transition-all duration-200">
       {/* Header Banner */}
@@ -53,25 +76,25 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
         
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 sm:gap-6">
           <div className="relative h-28 w-28 sm:h-32 sm:w-32 shrink-0">
-            <img 
-              src={`/api/zoho/photo/${student.studentId}`} 
-              alt={student.fullName}
-              referrerPolicy="no-referrer"
-              className="h-28 w-28 sm:h-32 sm:w-32 rounded-2xl object-cover border-4 border-white/20 shadow-xl bg-slate-800 ring-2 ring-indigo-500/40"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                if (student.profilePhoto && !target.src.includes(student.profilePhoto) && !target.src.includes("/api/zoho/image")) {
-                  target.src = student.profilePhoto;
-                } else {
-                  target.style.display = "none";
-                  const fallback = target.nextElementSibling as HTMLElement;
-                  if (fallback) fallback.classList.remove("hidden");
-                }
-              }}
-            />
-            <div className="hidden h-28 w-28 sm:h-32 sm:w-32 bg-indigo-600 rounded-2xl items-center justify-center font-extrabold text-4xl sm:text-5xl text-white shadow-xl border-4 border-white/20">
-              {student.fullName.charAt(0)}
-            </div>
+            {!imgError ? (
+              <img 
+                key={`${student.studentId}_${currentImgSrc}`}
+                src={currentImgSrc} 
+                alt={student.fullName}
+                referrerPolicy="no-referrer"
+                className="h-28 w-28 sm:h-32 sm:w-32 rounded-2xl object-cover border-4 border-white/20 shadow-xl bg-slate-800 ring-2 ring-indigo-500/40"
+                onError={handleImageError}
+              />
+            ) : (
+              <div className="h-28 w-28 sm:h-32 sm:w-32 bg-gradient-to-br from-indigo-600 via-indigo-700 to-slate-900 rounded-2xl flex flex-col items-center justify-center font-extrabold text-white shadow-xl border-4 border-white/20 ring-2 ring-indigo-500/40 select-none">
+                <span className="text-3xl sm:text-4xl tracking-tight">
+                  {nameInitials}
+                </span>
+                <span className="text-[10px] text-indigo-200 uppercase font-mono font-semibold tracking-wider mt-0.5">
+                  {student.studentId}
+                </span>
+              </div>
+            )}
           </div>
           <div>
             <h2 className="text-2xl sm:text-3xl font-extrabold flex items-center gap-2">{student.fullName}</h2>

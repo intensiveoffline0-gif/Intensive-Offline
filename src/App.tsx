@@ -1594,9 +1594,19 @@ export default function App() {
                           }}
                           className="hover:bg-indigo-50/30 cursor-pointer transition-colors"
                         >
-                          <td className="py-3 px-4 text-slate-900 font-semibold flex items-center gap-2">
-                            <div className="h-6 w-6 bg-indigo-50 text-indigo-700 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0 border border-indigo-200">
-                              {student.fullName.charAt(0)}
+                          <td className="py-3 px-4 text-slate-900 font-semibold flex items-center gap-2.5">
+                            <div className="relative h-7 w-7 rounded-full overflow-hidden bg-indigo-50 text-indigo-700 font-bold text-[10px] shrink-0 border border-indigo-200 flex items-center justify-center">
+                              <img
+                                src={`/api/zoho/photo/${encodeURIComponent(student.studentId)}`}
+                                alt=""
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                                className="absolute inset-0 h-full w-full object-cover"
+                                onError={(e) => {
+                                  (e.target as HTMLElement).style.display = "none";
+                                }}
+                              />
+                              <span>{student.fullName.charAt(0)}</span>
                             </div>
                             <span className="truncate">{student.fullName}</span>
                           </td>

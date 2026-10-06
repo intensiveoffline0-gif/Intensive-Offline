@@ -154,9 +154,10 @@ function cleanZohoText(val: any): string {
   return s.replace(/<[^>]*>/g, "").trim();
 }
 
-function extractZohoPhotoUrl(rawPhoto: any): string {
+function extractZohoPhotoUrl(rawPhoto: any, recordId?: string): string {
   if (!rawPhoto) return "";
-  const s = String(rawPhoto);
+  const s = String(rawPhoto).trim();
+  if (s.startsWith("http://") || s.startsWith("https://")) return s;
   const m = s.match(/downqual=["']([^"']+)["']/i) || s.match(/src=["']([^"']+)["']/i);
   if (m) {
     let url = m[1].replace(/&amp;/g, "&");
@@ -165,12 +166,17 @@ function extractZohoPhotoUrl(rawPhoto: any): string {
     }
     return url;
   }
+  const filename = s.split("/image/")[1] || s.split("/download/")[1] || s.split("/").pop();
+  if (filename && recordId) {
+    return `https://creatorapp.zohopublic.in/nxtwave/intensive-offline/report/Student_Profiles_AI_Studio/${recordId}/Profile_Photo/download-file/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0?filepath=/${filename}&digestValue=eyJsYW5ndWFnZSI6IiJ9`;
+  }
   return "";
 }
 
-function extractZohoResumeUrl(rawResume: any): string {
+function extractZohoResumeUrl(rawResume: any, recordId?: string): string {
   if (!rawResume) return "";
-  const s = String(rawResume);
+  const s = String(rawResume).trim();
+  if (s.startsWith("http://") || s.startsWith("https://")) return s;
   const m = s.match(/href=["']([^"']+)["']/i);
   if (m) {
     let url = m[1].replace(/&amp;/g, "&");
@@ -178,6 +184,10 @@ function extractZohoResumeUrl(rawResume: any): string {
       url = "https://creatorapp.zohopublic.in" + url;
     }
     return url;
+  }
+  const filename = s.split("/image/")[1] || s.split("/download/")[1] || s.split("/").pop();
+  if (filename && recordId) {
+    return `https://creatorapp.zohopublic.in/nxtwave/intensive-offline/report/Student_Profiles_AI_Studio/${recordId}/Your_Resume/download-file/CFJq3KyZ7QMmMa2a5tU0e8Artb5F9qTeU79eaWB4Te28b9DXGP60vg46uyJJVyRpOfxXG9MfpSUh2Gsq0RG9hbERxRORC2J4MWY0?filepath=/${filename}&digestValue=eyJsYW5ndWFnZSI6IiJ9`;
   }
   return "";
 }
@@ -546,8 +556,10 @@ async function syncWithZohoLive(clientSyncTime?: string): Promise<{
       newCount++;
     }
 
-    const photo = pr ? extractZohoPhotoUrl(getProfVal(pr, "profile photo")) : (existing?.["Profile Photo"] || "");
-    const resume = pr ? extractZohoResumeUrl(getProfVal(pr, "your resume")) : (existing?.["Resume"] || "");
+    const rawPhotoVal = pr ? getProfVal(pr, "profile photo") : "";
+    const photo = (rawPhotoVal ? extractZohoPhotoUrl(rawPhotoVal) : "") || existing?.["Profile Photo"] || "";
+    const rawResumeVal = pr ? getProfVal(pr, "your resume") : "";
+    const resume = (rawResumeVal ? extractZohoResumeUrl(rawResumeVal) : "") || existing?.["Resume"] || "";
 
     const studentRow: Record<string, string> = {
       "Full Name": (pr ? getProfVal(pr, "your full name") : "") || fullName || existing?.["Full Name"] || "",
@@ -634,8 +646,8 @@ async function syncWithZohoLive(clientSyncTime?: string): Promise<{
       "Placement Type": getProfVal(pr, "placed through"),
       "Placed Month": "",
       "CTC(LPA)": "",
-      "Profile Photo": extractZohoPhotoUrl(getProfVal(pr, "profile photo")),
-      "Resume": extractZohoResumeUrl(getProfVal(pr, "your resume")),
+      "Profile Photo": extractZohoPhotoUrl(getProfVal(pr, "profile photo")) || existingMap.get(sid)?.["Profile Photo"] || "",
+      "Resume": extractZohoResumeUrl(getProfVal(pr, "your resume")) || existingMap.get(sid)?.["Resume"] || "",
       "Instructor Name": getProfVal(pr, "instructor name"),
       "Centre Name": getProfVal(pr, "centre name")
     });
@@ -763,6 +775,39 @@ app.post(["/api/zoho/sync", "/api/zoho/live-sync"], async (req, res) => {
   }
 });
 
+// Helper to sniff image magic bytes when upstream returns octet-stream
+function getValidImageContentType(buffer: Buffer, defaultType = "image/jpeg"): string {
+  if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xD8) return "image/jpeg";
+  if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return "image/png";
+  if (buffer.length >= 3 && buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) return "image/gif";
+  if (buffer.length >= 12 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  if (buffer.toString("utf8", 0, 100).includes("<svg")) return "image/svg+xml";
+  return defaultType.startsWith("image/") ? defaultType : "image/jpeg";
+}
+
+function generateInitialsSvg(name: string, id: string): Buffer {
+  const initials = (name || "Student")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(w => w[0]?.toUpperCase())
+    .join("") || name?.charAt(0)?.toUpperCase() || "S";
+  
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+    <defs>
+      <linearGradient id="avatarGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#4f46e5" />
+        <stop offset="50%" stop-color="#4338ca" />
+        <stop offset="100%" stop-color="#1e1b4b" />
+      </linearGradient>
+    </defs>
+    <rect width="256" height="256" rx="40" fill="url(#avatarGrad)"/>
+    <text x="128" y="145" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="82" font-weight="800" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">${initials}</text>
+    <text x="128" y="210" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="19" font-weight="600" fill="#c7d2fe" text-anchor="middle">${id || ""}</text>
+  </svg>`;
+  return Buffer.from(svg);
+}
+
 // Proxy endpoint to stream Zoho Creator profile photos with proper caching & CORS headers
 app.get("/api/zoho/image", async (req, res) => {
   try {
@@ -774,11 +819,14 @@ app.get("/api/zoho/image", async (req, res) => {
     if (!upstream.ok) {
       return res.status(upstream.status).send("Failed to fetch image from Zoho");
     }
-    const contentType = upstream.headers.get("content-type") || "image/jpeg";
+    const rawContentType = upstream.headers.get("content-type") || "image/jpeg";
+    const arr = await upstream.arrayBuffer();
+    const buffer = Buffer.from(arr);
+    const contentType = getValidImageContentType(buffer, rawContentType.split(";")[0]);
+
     res.setHeader("Content-Type", contentType);
     res.setHeader("Cache-Control", "public, max-age=86400, immutable");
-    const arr = await upstream.arrayBuffer();
-    return res.send(Buffer.from(arr));
+    return res.send(buffer);
   } catch (err: any) {
     console.error("Zoho image proxy error:", err);
     return res.status(500).send("Internal server error proxying image");
@@ -787,6 +835,7 @@ app.get("/api/zoho/image", async (req, res) => {
 
 // Dedicated photo endpoint by Student ID (e.g. /api/zoho/photo/I25A1002)
 const studentPhotoUrlMap = new Map<string, string>();
+const studentNameMap = new Map<string, string>();
 const photoBufferCache = new Map<string, { buffer: Buffer; contentType: string }>();
 
 function refreshStudentPhotoMap(csv: string) {
@@ -795,25 +844,36 @@ function refreshStudentPhotoMap(csv: string) {
     if (rows.length < 2) return;
     const headers = rows[0].map(h => h.trim().toLowerCase());
     const idIdx = headers.findIndex(h => h === "student id" || h.includes("student id"));
+    const nameIdx = headers.findIndex(h => h === "full name" || h.includes("name"));
     const photoIdx = headers.findIndex(h => h === "profile photo" || h.includes("photo"));
-    if (idIdx === -1 || photoIdx === -1) return;
+    if (idIdx === -1) return;
+
     for (let i = 1; i < rows.length; i++) {
       const sid = (rows[i][idIdx] || "").trim().toUpperCase();
-      const pUrl = (rows[i][photoIdx] || "").trim();
-      if (sid && pUrl && pUrl.startsWith("http")) {
-        studentPhotoUrlMap.set(sid, pUrl);
+      if (!sid) continue;
+      if (nameIdx !== -1) {
+        const name = (rows[i][nameIdx] || "").trim();
+        if (name) studentNameMap.set(sid, name);
+      }
+      if (photoIdx !== -1) {
+        const pUrl = (rows[i][photoIdx] || "").trim();
+        if (pUrl && pUrl.startsWith("http")) {
+          studentPhotoUrlMap.set(sid, pUrl);
+        }
       }
     }
-    console.log(`[Photo Sync] Mapped ${studentPhotoUrlMap.size} student photos from database.`);
+    console.log(`[Photo Sync] Mapped ${studentPhotoUrlMap.size} student photos and ${studentNameMap.size} student names.`);
   } catch (err) {
     console.warn("Could not populate studentPhotoUrlMap:", err);
   }
 }
 
-// Initial populate of student photo map
+// Initial populate of student photo map from both sources
 try {
-  const initCsv = fs.existsSync(CSV_FILE_PATH) ? fs.readFileSync(CSV_FILE_PATH, "utf8") : ZOHO_STUDENTS_CSV;
-  refreshStudentPhotoMap(initCsv);
+  refreshStudentPhotoMap(ZOHO_STUDENTS_CSV);
+  if (fs.existsSync(CSV_FILE_PATH)) {
+    refreshStudentPhotoMap(fs.readFileSync(CSV_FILE_PATH, "utf8"));
+  }
 } catch (_) {}
 
 app.get("/api/zoho/photo/:studentId", async (req, res) => {
@@ -823,13 +883,12 @@ app.get("/api/zoho/photo/:studentId", async (req, res) => {
 
     let photoUrl = studentPhotoUrlMap.get(studentId);
     if (!photoUrl && studentPhotoUrlMap.size === 0) {
-      const currentCsv = fs.existsSync(CSV_FILE_PATH) ? fs.readFileSync(CSV_FILE_PATH, "utf8") : ZOHO_STUDENTS_CSV;
-      refreshStudentPhotoMap(currentCsv);
+      refreshStudentPhotoMap(fs.existsSync(CSV_FILE_PATH) ? fs.readFileSync(CSV_FILE_PATH, "utf8") : ZOHO_STUDENTS_CSV);
       photoUrl = studentPhotoUrlMap.get(studentId);
     }
-
     if (!photoUrl) {
-      return res.status(404).send("No profile photo found for student");
+      refreshStudentPhotoMap(ZOHO_STUDENTS_CSV);
+      photoUrl = studentPhotoUrlMap.get(studentId);
     }
 
     // Check memory buffer cache
@@ -840,20 +899,34 @@ app.get("/api/zoho/photo/:studentId", async (req, res) => {
       return res.send(cached.buffer);
     }
 
-    const upstream = await fetch(photoUrl);
-    if (!upstream.ok) {
-      return res.status(upstream.status).send("Failed to fetch image from Zoho");
+    if (photoUrl) {
+      try {
+        const upstream = await fetch(photoUrl);
+        if (upstream.ok) {
+          const rawContentType = upstream.headers.get("content-type") || "image/jpeg";
+          const arr = await upstream.arrayBuffer();
+          const buffer = Buffer.from(arr);
+          const contentType = getValidImageContentType(buffer, rawContentType.split(";")[0]);
+
+          photoBufferCache.set(studentId, { buffer, contentType });
+
+          res.setHeader("Content-Type", contentType);
+          res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+          return res.send(buffer);
+        } else {
+          console.warn(`[Photo Upstream] Zoho returned ${upstream.status} for student ${studentId}`);
+        }
+      } catch (upstreamErr) {
+        console.warn(`[Photo Upstream Error] for ${studentId}:`, upstreamErr);
+      }
     }
 
-    const contentType = upstream.headers.get("content-type") || "image/jpeg";
-    const arr = await upstream.arrayBuffer();
-    const buffer = Buffer.from(arr);
-
-    photoBufferCache.set(studentId, { buffer, contentType });
-
-    res.setHeader("Content-Type", contentType);
+    // High quality fallback: generate beautiful SVG avatar with initials
+    const studentName = studentNameMap.get(studentId) || studentId;
+    const svgBuffer = generateInitialsSvg(studentName, studentId);
+    res.setHeader("Content-Type", "image/svg+xml");
     res.setHeader("Cache-Control", "public, max-age=86400, immutable");
-    return res.send(buffer);
+    return res.send(svgBuffer);
   } catch (err: any) {
     console.error("Error serving student photo for " + req.params.studentId + ":", err);
     return res.status(500).send("Internal server error fetching photo");
