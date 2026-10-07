@@ -13,10 +13,18 @@ export default async function handler(req, res) {
     if (!rawUrl || !rawUrl.startsWith("https://creatorapp.zohopublic.in")) {
       return res.status(400).send("Invalid image URL");
     }
-    const upstream = await fetch(rawUrl);
+
+    const upstream = await fetch(rawUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+      }
+    });
+
     if (!upstream.ok) {
       return res.status(upstream.status).send("Failed to fetch image from Zoho");
     }
+
     const rawContentType = upstream.headers.get("content-type") || "image/jpeg";
     const arr = await upstream.arrayBuffer();
     const buffer = Buffer.from(arr);

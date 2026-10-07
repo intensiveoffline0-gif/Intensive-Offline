@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { Student } from "../types";
 import { 
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, LabelList
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList
 } from "recharts";
 import { BarChart3 } from "lucide-react";
 
@@ -10,6 +10,7 @@ interface AnalyticsChartsProps {
   isAdmin?: boolean;
 }
 
+// Custom shape for batch bars with refunded cap
 const CustomBarWithRefundIndicator = (props: any) => {
   const { x, y, width, height, payload } = props;
   const hasRefunds = (payload?.refunded || 0) > 0;
@@ -80,8 +81,7 @@ const CustomBarWithRefundIndicator = (props: any) => {
   );
 };
 
-export function AnalyticsCharts({ students, isAdmin = false }: AnalyticsChartsProps) {
-  
+export function AnalyticsCharts({ students }: AnalyticsChartsProps) {
   // Batch Details distribution (dynamically computed)
   const batchData = useMemo(() => {
     const batchesSet = new Set<string>();
@@ -170,6 +170,7 @@ export function AnalyticsCharts({ students, isAdmin = false }: AnalyticsChartsPr
           </span>
         </div>
       </div>
+
       <div className="h-80">
         {batchData.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
@@ -244,4 +245,3 @@ export function AnalyticsCharts({ students, isAdmin = false }: AnalyticsChartsPr
     </div>
   );
 }
-

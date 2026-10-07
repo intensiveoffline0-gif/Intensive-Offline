@@ -20,6 +20,78 @@ const formatDateLabel = (d: Date | null): string => {
   return `${monthNames[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 };
 
+type QuickPreset = 
+  | "today" 
+  | "yesterday" 
+  | "this_week" 
+  | "last_week" 
+  | "this_month" 
+  | "last_month" 
+  | "last_30_days" 
+  | "last_90_days"
+  | "all_time";
+
+interface PresetConfig {
+  key: QuickPreset;
+  label: string;
+  subLabel: string;
+}
+
+const getPresetDates = (preset: QuickPreset): { start: Date | null; end: Date | null } => {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (preset === "all_time") {
+    return { start: null, end: null };
+  }
+  if (preset === "today") {
+    return { start: today, end: today };
+  }
+  if (preset === "yesterday") {
+    const yest = new Date(today);
+    yest.setDate(today.getDate() - 1);
+    return { start: yest, end: yest };
+  }
+  if (preset === "this_week") {
+    const day = today.getDay();
+    const diff = (day === 0 ? -6 : 1) - day;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + diff);
+    return { start: monday, end: today };
+  }
+  if (preset === "last_week") {
+    const day = today.getDay();
+    const diffToThisMonday = (day === 0 ? -6 : 1) - day;
+    const thisMonday = new Date(today);
+    thisMonday.setDate(today.getDate() + diffToThisMonday);
+    const lastMonday = new Date(thisMonday);
+    lastMonday.setDate(thisMonday.getDate() - 7);
+    const lastSunday = new Date(thisMonday);
+    lastSunday.setDate(thisMonday.getDate() - 1);
+    return { start: lastMonday, end: lastSunday };
+  }
+  if (preset === "this_month") {
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { start: firstDay, end: today };
+  }
+  if (preset === "last_month") {
+    const firstDay = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
+    return { start: firstDay, end: lastDay };
+  }
+  if (preset === "last_30_days") {
+    const start = new Date(today);
+    start.setDate(today.getDate() - 30);
+    return { start, end: today };
+  }
+  if (preset === "last_90_days") {
+    const start = new Date(today);
+    start.setDate(today.getDate() - 90);
+    return { start, end: today };
+  }
+  return { start: null, end: null };
+};
+
 export function EnrollmentDatePicker({ onApply, startDate, endDate, label }: EnrollmentDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -31,23 +103,30 @@ export function EnrollmentDatePicker({ onApply, startDate, endDate, label }: Enr
   const [tempStart, setTempStart] = useState<Date | null>(startDate);
   const [tempEnd, setTempEnd] = useState<Date | null>(endDate);
 
-  // Month and Year view states for both calendars
-  const [startMonth, setStartMonth] = useState<number>(11); // Default to Dec (11) for start of our student data
-  const [startYear, setStartYear] = useState<number>(2025); // Default to 2025
-  const [endMonth, setEndMonth] = useState<number>(5);      // Default to Jun (5) for end of our student data
-  const [endYear, setEndYear] = useState<number>(2026);      // Default to 2026
+  // Month and Year view states for both calendars (defaults to current month)
+  const [startMonth, setStartMonth] = useState<number>(() => startDate ? startDate.getMonth() : new Date().getMonth());
+  const [startYear, setStartYear] = useState<number>(() => startDate ? startDate.getFullYear() : new Date().getFullYear());
+  const [endMonth, setEndMonth] = useState<number>(() => endDate ? endDate.getMonth() : new Date().getMonth());
+  const [endYear, setEndYear] = useState<number>(() => endDate ? endDate.getFullYear() : new Date().getFullYear());
 
   // Keep views in sync with actual selected dates when they change
   useEffect(() => {
     setTempStart(startDate);
     setTempEnd(endDate);
+    const now = new Date();
     if (startDate) {
       setStartMonth(startDate.getMonth());
       setStartYear(startDate.getFullYear());
+    } else {
+      setStartMonth(now.getMonth());
+      setStartYear(now.getFullYear());
     }
     if (endDate) {
       setEndMonth(endDate.getMonth());
       setEndYear(endDate.getFullYear());
+    } else {
+      setEndMonth(now.getMonth());
+      setEndYear(now.getFullYear());
     }
   }, [startDate, endDate, isOpen]);
 
@@ -115,6 +194,51 @@ export function EnrollmentDatePicker({ onApply, startDate, endDate, label }: Enr
   const handleSelectEndDate = (day: number) => {
     const selected = new Date(endYear, endMonth, day);
     setTempEnd(selected);
+  };
+
+  const handleResetToCurrentMonth = () => {
+    const now = new Date();
+    setStartMonth(now.getMonth());
+    setStartYear(now.getFullYear());
+    setEndMonth(now.getMonth());
+    setEndYear(now.getFullYear());
+  };
+
+  const handleSelectPreset = (preset: QuickPreset) => {
+    const { start, end } = getPresetDates(preset);
+    if (!start || !end) {
+      setRangeType("Fixed");
+      setTempStart(null);
+      setTempEnd(null);
+      handleResetToCurrentMonth();
+      onApply(null, null);
+      return;
+    }
+    setRangeType("Fixed");
+    setTempStart(start);
+    setTempEnd(end);
+    setStartMonth(start.getMonth());
+    setStartYear(start.getFullYear());
+    setEndMonth(end.getMonth());
+    setEndYear(end.getFullYear());
+    // Auto-apply preset for immediate response
+    onApply(start, end);
+  };
+
+  const isPresetSelected = (preset: QuickPreset) => {
+    const { start, end } = getPresetDates(preset);
+    if (preset === "all_time") {
+      return !tempStart && !tempEnd;
+    }
+    if (!tempStart || !tempEnd || !start || !end) return false;
+    return (
+      tempStart.getFullYear() === start.getFullYear() &&
+      tempStart.getMonth() === start.getMonth() &&
+      tempStart.getDate() === start.getDate() &&
+      tempEnd.getFullYear() === end.getFullYear() &&
+      tempEnd.getMonth() === end.getMonth() &&
+      tempEnd.getDate() === end.getDate()
+    );
   };
 
   const currentSelectionLabel = () => {
@@ -233,9 +357,9 @@ export function EnrollmentDatePicker({ onApply, startDate, endDate, label }: Enr
       {isOpen && (
         <div className="absolute right-0 md:left-0 mt-2 z-50 bg-white border border-slate-200/90 rounded-2xl shadow-xl p-5 w-[600px] max-w-[95vw] md:w-[560px] animate-fadeIn">
           
-          {/* Top Options Segmented Selector */}
-          <div className="mb-4">
-            <div className="relative inline-block w-40">
+          {/* Top Options & Quick Filters */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div className="relative inline-block w-36 shrink-0">
               <select
                 value={rangeType}
                 onChange={(e) => {
@@ -255,6 +379,97 @@ export function EnrollmentDatePicker({ onApply, startDate, endDate, label }: Enr
                 <ChevronDown className="h-3 w-3" />
               </div>
             </div>
+
+            {/* Quick Filter Presets */}
+            {rangeType === "Fixed" && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Quick:</span>
+                <button
+                  type="button"
+                  onClick={() => handleSelectPreset("last_week")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    isPresetSelected("last_week")
+                      ? "bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-300"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                  title="Last Week (Previous Monday to Sunday)"
+                >
+                  Last Week
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectPreset("this_week")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    isPresetSelected("this_week")
+                      ? "bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-300"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                  title="This Week (Monday to Today)"
+                >
+                  This Week
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectPreset("last_month")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    isPresetSelected("last_month")
+                      ? "bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-300"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                  title="Last Month (1st to last day of previous month)"
+                >
+                  Last Month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectPreset("this_month")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    isPresetSelected("this_month")
+                      ? "bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-300"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                  title="This Month (1st of this month to Today)"
+                >
+                  This Month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectPreset("last_30_days")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    isPresetSelected("last_30_days")
+                      ? "bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-300"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                  title="Last 30 Days"
+                >
+                  Last 30 Days
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectPreset("last_90_days")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    isPresetSelected("last_90_days")
+                      ? "bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-300"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                  title="Last 90 Days"
+                >
+                  Last 90 Days
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectPreset("all_time")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    isPresetSelected("all_time")
+                      ? "bg-rose-600 text-white shadow-xs"
+                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                  }`}
+                  title="Clear Date Filter"
+                >
+                  All Time
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Invalid range error banner */}
@@ -270,9 +485,25 @@ export function EnrollmentDatePicker({ onApply, startDate, endDate, label }: Enr
               
               {/* Start Date Calendar Section */}
               <div className="flex flex-col">
-                <span className="text-[11px] font-bold text-slate-400 tracking-wider uppercase mb-2 block">
-                  Start Date
-                </span>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold text-slate-400 tracking-wider uppercase block">
+                    Start Date
+                  </span>
+                  {(startMonth !== new Date().getMonth() || startYear !== new Date().getFullYear()) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const now = new Date();
+                        setStartMonth(now.getMonth());
+                        setStartYear(now.getFullYear());
+                      }}
+                      className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-1.5 py-0.5 rounded cursor-pointer transition"
+                      title="Jump to Current Month"
+                    >
+                      Current Month
+                    </button>
+                  )}
+                </div>
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-extrabold text-slate-800 dark:text-white font-sans">
                     {MONTHS_SHORT[startMonth]} {startYear}
@@ -308,9 +539,25 @@ export function EnrollmentDatePicker({ onApply, startDate, endDate, label }: Enr
 
               {/* End Date Calendar Section */}
               <div className="flex flex-col">
-                <span className="text-[11px] font-bold text-slate-400 tracking-wider uppercase mb-2 block">
-                  End Date
-                </span>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold text-slate-400 tracking-wider uppercase block">
+                    End Date
+                  </span>
+                  {(endMonth !== new Date().getMonth() || endYear !== new Date().getFullYear()) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const now = new Date();
+                        setEndMonth(now.getMonth());
+                        setEndYear(now.getFullYear());
+                      }}
+                      className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-1.5 py-0.5 rounded cursor-pointer transition"
+                      title="Jump to Current Month"
+                    >
+                      Current Month
+                    </button>
+                  )}
+                </div>
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-extrabold text-slate-800 dark:text-white font-sans">
                     {MONTHS_SHORT[endMonth]} {endYear}

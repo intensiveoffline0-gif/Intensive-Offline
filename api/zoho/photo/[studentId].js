@@ -22,10 +22,12 @@ function initPhotoMap() {
 
   const lines = csv.split("\n");
   if (lines.length < 2) return;
+
   const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/"/g, ""));
   const idIdx = headers.findIndex(h => h === "student id" || h.includes("student id"));
   const nameIdx = headers.findIndex(h => h === "full name" || h.includes("name"));
   const photoIdx = headers.findIndex(h => h === "profile photo" || h.includes("photo"));
+
   if (idIdx === -1) return;
 
   for (let i = 1; i < lines.length; i++) {
@@ -44,6 +46,7 @@ function initPhotoMap() {
 
     const sid = (cols[idIdx] || "").trim().toUpperCase();
     if (!sid) continue;
+
     if (nameIdx !== -1) {
       const name = (cols[nameIdx] || "").trim();
       if (name) studentNameMap.set(sid, name);
@@ -92,7 +95,9 @@ function generateInitialsSvg(name, id) {
 export default async function handler(req, res) {
   try {
     initPhotoMap();
-    const studentId = (req.query.studentId || req.query.id || "").trim().toUpperCase();
+    const rawId = req.query?.studentId || req.query?.id || "";
+    const studentId = (Array.isArray(rawId) ? rawId[0] : rawId).trim().toUpperCase();
+
     if (!studentId) {
       return res.status(400).send("Student ID required");
     }
@@ -107,15 +112,18 @@ export default async function handler(req, res) {
     const photoUrl = studentPhotoMap?.get(studentId);
     if (photoUrl) {
       try {
-        const upstream = await fetch(photoUrl);
+        const upstream = await fetch(photoUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+          }
+        });
         if (upstream.ok) {
           const rawContentType = upstream.headers.get("content-type") || "image/jpeg";
           const arr = await upstream.arrayBuffer();
           const buffer = Buffer.from(arr);
           const contentType = getValidImageContentType(buffer, rawContentType.split(";")[0]);
-
           photoBufferCache.set(studentId, { buffer, contentType });
-
           res.setHeader("Content-Type", contentType);
           res.setHeader("Cache-Control", "public, max-age=86400, immutable");
           return res.send(buffer);

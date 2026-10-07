@@ -3,7 +3,7 @@ import { Student } from "../types";
 import { 
   User, Mail, Phone, MapPin, GraduationCap, Calendar, 
   Briefcase, Award, ClipboardCheck, Sparkles, Building, Bookmark,
-  FileText, ExternalLink, Clock
+  FileText, ExternalLink, Clock, BookOpen, Layers
 } from "lucide-react";
 import { getBatchTimingSlot } from "../data/csvParser";
 
@@ -24,37 +24,39 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
   }
 
   const isPlaced = !!(student.placedOrganisation || student.externalPlacedOrganisation);
-  const isRefunded = student.activeStatus.toLowerCase() === "refunded";
-  const timingSlot = getBatchTimingSlot(student.batchDetails, student.batchTiming);
+  const isRefunded = (student.activeStatus || "").toLowerCase() === "refunded";
+  const timingSlot = getBatchTimingSlot(student.batchDetails || "", student.batchTiming);
 
-  const directPhotoUrl = student.profilePhoto?.trim();
-  const proxyPhotoUrl = `/api/zoho/photo/${encodeURIComponent(student.studentId)}`;
+  const directPhotoUrl = (student.profilePhoto || "").trim();
+  const proxyPhotoUrl = `/api/zoho/photo/${encodeURIComponent(student.studentId || "")}`;
+  const rawProxyUrl = directPhotoUrl ? `/api/zoho/image?url=${encodeURIComponent(directPhotoUrl)}` : "";
 
   const [imgError, setImgError] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
   const [currentImgSrc, setCurrentImgSrc] = useState<string>(directPhotoUrl || proxyPhotoUrl);
 
   useEffect(() => {
     setImgError(false);
+    setImgLoaded(false);
     setCurrentImgSrc(directPhotoUrl || proxyPhotoUrl);
   }, [student.studentId, directPhotoUrl]);
 
   const handleImageError = () => {
-    // Multi-tier resilient fallback: direct CDN -> proxy by ID -> proxy by raw URL -> vector SVG badge
     if (directPhotoUrl && currentImgSrc === directPhotoUrl) {
       setCurrentImgSrc(proxyPhotoUrl);
-    } else if (directPhotoUrl && currentImgSrc !== `/api/zoho/image?url=${encodeURIComponent(directPhotoUrl)}`) {
-      setCurrentImgSrc(`/api/zoho/image?url=${encodeURIComponent(directPhotoUrl)}`);
+    } else if (rawProxyUrl && currentImgSrc === proxyPhotoUrl) {
+      setCurrentImgSrc(rawProxyUrl);
     } else {
       setImgError(true);
     }
   };
 
-  const nameInitials = student.fullName
+  const nameInitials = (student.fullName || "Student")
     .split(" ")
     .filter(Boolean)
     .slice(0, 2)
     .map(w => w[0]?.toUpperCase())
-    .join("") || student.fullName.charAt(0)?.toUpperCase() || "S";
+    .join("") || student.fullName?.charAt(0)?.toUpperCase() || "S";
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden transition-all duration-200">
@@ -83,14 +85,26 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 sm:gap-6">
           <div className="relative h-28 w-28 sm:h-32 sm:w-32 shrink-0">
             {!imgError ? (
-              <img 
-                key={`${student.studentId}_${currentImgSrc}`}
-                src={currentImgSrc} 
-                alt={student.fullName}
-                referrerPolicy="no-referrer"
-                className="h-28 w-28 sm:h-32 sm:w-32 rounded-2xl object-cover border-4 border-white/20 shadow-xl bg-slate-800 ring-2 ring-indigo-500/40"
-                onError={handleImageError}
-              />
+              <div className="relative h-28 w-28 sm:h-32 sm:w-32 rounded-2xl overflow-hidden border-4 border-white/20 shadow-xl bg-slate-800 ring-2 ring-indigo-500/40">
+                {!imgLoaded && (
+                  <div className="absolute inset-0 bg-gradient-to-br from-indigo-700 via-indigo-800 to-slate-950 flex flex-col items-center justify-center font-extrabold text-white select-none">
+                    <span className="text-3xl sm:text-4xl tracking-tight">{nameInitials}</span>
+                    <span className="text-[10px] text-indigo-200 uppercase font-mono font-semibold tracking-wider mt-0.5">
+                      {student.studentId}
+                    </span>
+                  </div>
+                )}
+                <img 
+                  key={`${student.studentId}_${currentImgSrc}`}
+                  src={currentImgSrc} 
+                  alt={student.fullName}
+                  referrerPolicy="no-referrer"
+                  loading="eager"
+                  onLoad={() => setImgLoaded(true)}
+                  onError={handleImageError}
+                  className={`h-full w-full object-cover transition-opacity duration-200 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
+                />
+              </div>
             ) : (
               <div className="h-28 w-28 sm:h-32 sm:w-32 bg-gradient-to-br from-indigo-600 via-indigo-700 to-slate-900 rounded-2xl flex flex-col items-center justify-center font-extrabold text-white shadow-xl border-4 border-white/20 ring-2 ring-indigo-500/40 select-none">
                 <span className="text-3xl sm:text-4xl tracking-tight">
@@ -110,14 +124,16 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
                 ID: {student.studentId}
               </span>
               <span>•</span>
-              <span className="font-semibold text-indigo-200 font-mono">{student.batchDetails}</span>
+              <span className="font-semibold text-indigo-200 font-mono">{student.batchDetails || "—"}</span>
               <span>•</span>
               <span className="flex items-center gap-1.5 bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 px-2.5 py-0.5 rounded-md text-xs font-semibold">
                 <Clock className="h-3.5 w-3.5 text-indigo-300" />
                 {timingSlot}
               </span>
               <span>•</span>
-              <span className="text-indigo-300 font-medium">{student.preferredJobTrack?.replace(/_/g, " ")}</span>
+              <span className="text-indigo-300 font-medium">
+                {(student.preferredJobTrack || "—").replace(/_/g, " ")}
+              </span>
             </div>
           </div>
         </div>
@@ -149,11 +165,11 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
               </div>
               <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
                 <span className="text-slate-500 font-medium">Enrolled On</span>
-                <span className="font-mono font-medium text-slate-700">{student.enrolledOn}</span>
+                <span className="font-mono font-medium text-slate-700">{student.enrolledOn || "—"}</span>
               </div>
               <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
                 <span className="text-slate-500 font-medium">Batch details</span>
-                <span className="font-mono font-semibold text-slate-800">{student.batchDetails}</span>
+                <span className="font-mono font-semibold text-slate-800">{student.batchDetails || "—"}</span>
               </div>
               <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
                 <span className="text-slate-500 font-medium">Timing Slot</span>
@@ -214,7 +230,7 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
                 <div>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Home Address</p>
                   <p className="font-medium text-slate-800">
-                    {student.district ? `${student.district}, ` : ""}{student.state} - {student.pincode}
+                    {student.district ? `${student.district}, ` : ""}{student.state || "—"} {student.pincode ? `- ${student.pincode}` : ""}
                   </p>
                 </div>
               </div>
@@ -226,23 +242,44 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
         <div className="lg:col-span-2 space-y-6">
           {/* Qualifications & Academics */}
           <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-              <GraduationCap className="h-4.5 w-4.5 text-indigo-600" />
-              Academic Credentials
+            <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <GraduationCap className="h-4.5 w-4.5 text-indigo-600" />
+                Academic Credentials & Degree Details
+              </span>
+              <span className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                Graduation & PG
+              </span>
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Undergraduate Section */}
               <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/40">
-                <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-200">
-                  <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">Graduation</span>
-                  <span className="text-xs font-semibold text-slate-500">Degree Status</span>
+                <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
+                      Graduation Degree
+                    </span>
+                    <span className="text-xs font-semibold text-slate-500">UG Credentials</span>
+                  </div>
+                  {student.graduationYearOfPassing && (
+                    <span className="text-xs font-bold font-mono text-indigo-700 bg-white border border-slate-200 px-2 py-0.5 rounded">
+                      YOP: {student.graduationYearOfPassing}
+                    </span>
+                  )}
                 </div>
                 <div className="space-y-2 text-xs">
-                  <p className="font-bold text-slate-800">{student.graduationDegreeName} in {student.graduationStream || "General"}</p>
-                  <p className="text-slate-600">{student.graduationCollegeName}</p>
-                  <div className="flex justify-between text-slate-500 mt-2 font-medium">
-                    <span>Passing Year: <strong className="font-mono text-slate-800">{student.graduationYearOfPassing}</strong></span>
+                  <p className="font-bold text-slate-800 text-sm">
+                    {student.graduationDegreeName || "Degree"} in {student.graduationStream || "General"}
+                  </p>
+                  <p className="text-slate-600 font-medium">
+                    {student.graduationCollegeName || "College not recorded"}
+                  </p>
+                  <div className="flex justify-between items-center text-slate-500 mt-2 pt-2 border-t border-slate-100 font-medium">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                      Passing Year: <strong className="font-mono text-slate-800">{student.graduationYearOfPassing || "N/A"}</strong>
+                    </span>
                     <span>CGPA: <strong className="font-mono text-slate-800">{student.graduationCgpa || "N/A"}</strong></span>
                   </div>
                 </div>
@@ -250,16 +287,32 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
 
               {/* Postgraduate Section */}
               <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/40">
-                <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-200">
-                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">Post-Graduation</span>
-                  <span className="text-xs font-semibold text-slate-500">Master Degree</span>
+                <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                      Post-Graduation
+                    </span>
+                    <span className="text-xs font-semibold text-slate-500">Master Degree</span>
+                  </div>
+                  {student.postGraduationYearOfPassing && (
+                    <span className="text-xs font-bold font-mono text-emerald-700 bg-white border border-slate-200 px-2 py-0.5 rounded">
+                      YOP: {student.postGraduationYearOfPassing}
+                    </span>
+                  )}
                 </div>
                 {student.postGraduationDegreeName ? (
                   <div className="space-y-2 text-xs">
-                    <p className="font-bold text-slate-800">{student.postGraduationDegreeName} in {student.postGraduationStream}</p>
-                    <p className="text-slate-600">{student.postGraduationCollegeName}</p>
-                    <div className="flex justify-between text-slate-500 mt-2 font-medium">
-                      <span>Passing Year: <strong className="font-mono text-slate-800">{student.postGraduationYearOfPassing}</strong></span>
+                    <p className="font-bold text-slate-800 text-sm">
+                      {student.postGraduationDegreeName} in {student.postGraduationStream || "General"}
+                    </p>
+                    <p className="text-slate-600 font-medium">
+                      {student.postGraduationCollegeName || "College not recorded"}
+                    </p>
+                    <div className="flex justify-between items-center text-slate-500 mt-2 pt-2 border-t border-slate-100 font-medium">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                        Passing Year: <strong className="font-mono text-slate-800">{student.postGraduationYearOfPassing}</strong>
+                      </span>
                       <span>Avg Score: <strong className="font-mono text-slate-800">{student.postGraduationCgpa || "N/A"}</strong></span>
                     </div>
                   </div>
@@ -271,9 +324,23 @@ export function StudentProfile({ student, onClose }: StudentProfileProps) {
               </div>
             </div>
             
-            <div className="mt-4 bg-indigo-50/60 border border-indigo-100 rounded-xl p-3 text-xs text-indigo-900 flex items-center gap-2">
-              <span className="font-bold uppercase text-[9px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Highest Qualification</span>
-              <span className="font-medium text-slate-700">{student.highestQualification}</span>
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-2.5 text-xs text-indigo-900">
+                <span className="font-bold uppercase text-[9px] text-indigo-700 block mb-0.5">Degree</span>
+                <span className="font-semibold text-slate-800">{student.graduationDegreeName || "—"}</span>
+              </div>
+              <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-2.5 text-xs text-indigo-900">
+                <span className="font-bold uppercase text-[9px] text-indigo-700 block mb-0.5">Branch / Stream</span>
+                <span className="font-semibold text-slate-800 truncate block" title={student.graduationStream || "—"}>
+                  {student.graduationStream || "—"}
+                </span>
+              </div>
+              <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-2.5 text-xs text-indigo-900">
+                <span className="font-bold uppercase text-[9px] text-indigo-700 block mb-0.5">Highest Qualification</span>
+                <span className="font-semibold text-slate-800 truncate block">
+                  {student.highestQualification || student.graduationDegreeName || "—"}
+                </span>
+              </div>
             </div>
           </div>
 

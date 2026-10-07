@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/api/zoho/photo/:studentId",
-      "destination": "/api/zoho/photo/[studentId]?studentId=:studentId"
-    },
-    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

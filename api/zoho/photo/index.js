@@ -1,2 +1,5 @@
 import handler from "./[studentId].js";
-export default handler;
+
+export default async function (req, res) {
+  return handler(req, res);
+}

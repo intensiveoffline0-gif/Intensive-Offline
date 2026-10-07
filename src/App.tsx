@@ -10,6 +10,7 @@ import { CSVLoader } from "./components/CSVLoader";
 import { AICoPilot } from "./components/AICoPilot";
 import { AnalyticsCharts } from "./components/AnalyticsCharts";
 import { CollegeDistrictStats } from "./components/CollegeDistrictStats";
+import { ConsolidatedStats } from "./components/ConsolidatedStats";
 import { EnrollmentDatePicker } from "./components/EnrollmentDatePicker";
 import { SearchableDropdown } from "./components/SearchableDropdown";
 import { MultiSelectDropdown } from "./components/MultiSelectDropdown";
@@ -18,7 +19,8 @@ import {
   Search, SlidersHorizontal, Table, Download, User, 
   ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight,
   BrainCircuit, ExternalLink, HelpCircle,
-  MapPin, RefreshCw, RotateCcw, X, Settings
+  MapPin, RefreshCw, RotateCcw, X, Settings,
+  Lock, Unlock, Eye, EyeOff
 } from "lucide-react";
 
 const NxtWaveLogo = ({ 
@@ -137,11 +139,14 @@ function parseEnrollmentDate(dateStr: string): Date | null {
   return new Date(year, month, day);
 }
 
+const CSV_CACHE_VERSION = "v3_zoho_photos_final";
+
 export default function App() {
   const [students, setStudents] = useState<Student[]>(() => {
     const defaultParsed = parseStudentCSV(DEFAULT_STUDENT_CSV);
+    const cachedVersion = localStorage.getItem("nxtwave_csv_cache_version");
     const localCSV = localStorage.getItem("nxtwave_custom_csv");
-    if (localCSV) {
+    if (localCSV && cachedVersion === CSV_CACHE_VERSION) {
       const parsed = parseStudentCSV(localCSV);
       const localPhotos = parsed.filter(s => !!s.profilePhoto).length;
       const defaultPhotos = defaultParsed.filter(s => !!s.profilePhoto).length;
@@ -149,18 +154,20 @@ export default function App() {
       if (localPhotos >= defaultPhotos && parsed.length >= defaultParsed.length && parsed.length > 0) {
         return parsed;
       }
-      // Stale cache detected: clear old local storage so fresh photos take effect immediately
-      try {
-        localStorage.removeItem("nxtwave_custom_csv");
-      } catch (_) {}
     }
+    // Stale or old-version cache detected: clear old local storage so fresh photos take effect immediately
+    try {
+      localStorage.removeItem("nxtwave_custom_csv");
+      localStorage.setItem("nxtwave_csv_cache_version", CSV_CACHE_VERSION);
+    } catch (_) {}
     return defaultParsed;
   });
   
   const [rawCSV, setRawCSV] = useState<string>(() => {
     const defaultParsed = parseStudentCSV(DEFAULT_STUDENT_CSV);
+    const cachedVersion = localStorage.getItem("nxtwave_csv_cache_version");
     const localCSV = localStorage.getItem("nxtwave_custom_csv");
-    if (localCSV) {
+    if (localCSV && cachedVersion === CSV_CACHE_VERSION) {
       const parsed = parseStudentCSV(localCSV);
       const localPhotos = parsed.filter(s => !!s.profilePhoto).length;
       const defaultPhotos = defaultParsed.filter(s => !!s.profilePhoto).length;
@@ -172,12 +179,13 @@ export default function App() {
   });
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(() => {
+    const defaultParsed = parseStudentCSV(DEFAULT_STUDENT_CSV);
+    const cachedVersion = localStorage.getItem("nxtwave_csv_cache_version");
     const localCSV = localStorage.getItem("nxtwave_custom_csv");
-    if (localCSV) {
+    if (localCSV && cachedVersion === CSV_CACHE_VERSION) {
       const parsed = parseStudentCSV(localCSV);
       if (parsed.length > 0) return parsed[0].studentId;
     }
-    const defaultParsed = parseStudentCSV(DEFAULT_STUDENT_CSV);
     return defaultParsed.length > 0 ? defaultParsed[0].studentId : null;
   });
   const isDarkMode = false;
@@ -197,8 +205,57 @@ export default function App() {
     return `${day} ${month} ${year}, ${hoursStr}:${minutes} ${ampm}`;
   };
 
-  // Storage & Admin States (Direct access enabled - auto lock removed)
-  const [isAdmin] = useState<boolean>(true);
+  // Storage & Admin Password Protection States (Password: Intensive@admin)
+  const ADMIN_PASSWORD = "Intensive@admin";
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
+    return sessionStorage.getItem("nxtwave_admin_authenticated") === "true";
+  });
+  const [showAdminLockModal, setShowAdminLockModal] = useState<boolean>(false);
+  const [adminPasswordInput, setAdminPasswordInput] = useState<string>("");
+  const [adminPasswordError, setAdminPasswordError] = useState<string | null>(null);
+  const [showPasswordText, setShowPasswordText] = useState<boolean>(false);
+  const isAdmin = isAdminAuthenticated;
+
+  const handleOpenAdminSettings = () => {
+    if (isAdminAuthenticated) {
+      setActiveTab("loader");
+    } else {
+      setAdminPasswordInput("");
+      setAdminPasswordError(null);
+      setShowPasswordText(false);
+      setShowAdminLockModal(true);
+    }
+  };
+
+  const handleUnlockAdmin = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (adminPasswordInput === ADMIN_PASSWORD) {
+      setIsAdminAuthenticated(true);
+      sessionStorage.setItem("nxtwave_admin_authenticated", "true");
+      setShowAdminLockModal(false);
+      setAdminPasswordInput("");
+      setAdminPasswordError(null);
+      setActiveTab("loader");
+      setSyncToast({
+        type: "success",
+        message: "Admin access unlocked.",
+      });
+    } else {
+      setAdminPasswordError("Incorrect admin password. Please try again.");
+    }
+  };
+
+  const handleLockAdmin = () => {
+    setIsAdminAuthenticated(false);
+    sessionStorage.removeItem("nxtwave_admin_authenticated");
+    if (activeTab === "loader") {
+      setActiveTab("dashboard");
+    }
+    setSyncToast({
+      type: "info",
+      message: "Admin session locked.",
+    });
+  };
   const [isLoadingCSV, setIsLoadingCSV] = useState<boolean>(true);
   const [companyLogo, setCompanyLogo] = useState<string | null>(() => {
     return localStorage.getItem("nxtwave_company_logo");
@@ -229,10 +286,12 @@ export default function App() {
           const data = await res.json();
           if (data && data.csv) {
             const parsed = parseStudentCSV(data.csv);
-            if (parsed.length > 0) {
+            const parsedPhotos = parsed.filter(s => !!s.profilePhoto).length;
+            if (parsed.length > 0 && parsedPhotos >= 1000) {
               setStudents(parsed);
               setRawCSV(data.csv);
               localStorage.setItem("nxtwave_custom_csv", data.csv);
+              localStorage.setItem("nxtwave_csv_cache_version", CSV_CACHE_VERSION);
               setSelectedStudentId(parsed[0].studentId);
               loaded = true;
             }
@@ -835,6 +894,8 @@ export default function App() {
     return counts;
   }, [studentsForTrack]);
 
+
+
   const placedStatusCounts = useMemo(() => {
     let nxtwave = 0;
     let external = 0;
@@ -866,7 +927,6 @@ export default function App() {
     return base.filter(status => (placedStatusCounts[status as keyof typeof placedStatusCounts] || 0) > 0);
   }, [placedStatusCounts]);
 
-  // 3. Cascading Auto-Reset: If active selection no longer exists in refined options, reset to "All"
   // 3. Cascading Auto-Pruning: If active selections no longer exist in refined options, prune them
   useEffect(() => {
     if (filterDistricts.length > 0) {
@@ -909,6 +969,8 @@ export default function App() {
       if (valid.length !== filterTracks.length) setFilterTracks(valid);
     }
   }, [tracksList, filterTracks]);
+
+
 
   useEffect(() => {
     if (filterPlacedStatuses.length > 0) {
@@ -1142,20 +1204,40 @@ export default function App() {
               </div>
             </div>
 
-            {/* Admin Settings Button (Right side of the Sync button) */}
-            <button
-              type="button"
-              onClick={() => setActiveTab("loader")}
-              className={`inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer ${
-                activeTab === "loader"
-                  ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-md ring-2 ring-indigo-500"
-                  : "bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700"
-              }`}
-              title="Admin Settings & Zoho Database Reports"
-            >
-              <Settings className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
-              <span>Admin Settings</span>
-            </button>
+            {/* Admin Settings Button (Password Protected) */}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleOpenAdminSettings}
+                className={`inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                  activeTab === "loader"
+                    ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-md ring-2 ring-indigo-500"
+                    : "bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700"
+                }`}
+                title={isAdminAuthenticated ? "Admin Settings (Unlocked)" : "Admin Settings (Password Protected: Intensive@admin)"}
+              >
+                {isAdminAuthenticated ? (
+                  <Settings className="h-3.5 w-3.5 text-emerald-500" />
+                ) : (
+                  <Lock className="h-3.5 w-3.5 text-amber-500" />
+                )}
+                <span>Admin Settings</span>
+                {isAdminAuthenticated && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-0.5"></span>
+                )}
+              </button>
+
+              {isAdminAuthenticated && (
+                <button
+                  type="button"
+                  onClick={handleLockAdmin}
+                  className="p-2.5 rounded-lg bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-300 dark:border-slate-700 transition-colors shadow-xs cursor-pointer"
+                  title="Lock Admin Session"
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
         </div>
@@ -1204,7 +1286,18 @@ export default function App() {
                   : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
               }`}
             >
-              College & District Stats
+              Overall Analytics
+            </button>
+
+            <button
+              onClick={() => setActiveTab("consolidated")}
+              className={`px-5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === "consolidated" 
+                  ? "bg-indigo-600 text-white shadow-xs" 
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              Consolidated Stats
             </button>
             
             <button
@@ -1269,26 +1362,6 @@ export default function App() {
                       <span className="px-1.5 py-0.2 bg-rose-200/60 text-rose-800 rounded-full text-[10px] font-mono">
                         {activeFiltersCount}
                       </span>
-                    </button>
-                  )}
-                </div>
-
-                <div className="relative w-full sm:w-80">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search name, roll num, mobile, email..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchName(e.target.value)}
-                    className="pl-9 pr-8 py-2 w-full bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-slate-800 font-medium"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchName("")}
-                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                      title="Clear search text"
-                    >
-                      <X className="h-3.5 w-3.5" />
                     </button>
                   )}
                 </div>
@@ -1413,9 +1486,242 @@ export default function App() {
 
         {/* PAGE: COLLEGE & DISTRICT STATS */}
         {activeTab === "colleges" && (
-          <div className="animate-fadeIn">
+          <div className="space-y-6 animate-fadeIn">
+            {/* Search Filters Area (College & Districts Stats) */}
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <SlidersHorizontal className="h-4.5 w-4.5 text-indigo-600" />
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Search Filters</span>
+                  {hasActiveFilters && (
+                    <button
+                      onClick={handleClearAllFilters}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-all cursor-pointer shadow-2xs"
+                      title="Clear all applied filters"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      <span>Clear Filters</span>
+                      <span className="px-1.5 py-0.2 bg-rose-200/60 text-rose-800 rounded-full text-[10px] font-mono">
+                        {activeFiltersCount}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Multi-Select Filters Row */}
+              <div className="flex flex-wrap items-end gap-3">
+                <MultiSelectDropdown
+                  label="CENTRE"
+                  shortLabel="Centre"
+                  options={centresList}
+                  selected={filterCentres}
+                  onChange={setFilterCentres}
+                  counts={centreCounts}
+                  totalCount={studentsForCentre.length}
+                />
+
+                <MultiSelectDropdown
+                  label="BATCH"
+                  shortLabel="Batch"
+                  options={batchesList}
+                  selected={filterBatches}
+                  onChange={setFilterBatches}
+                  counts={batchCounts}
+                  totalCount={studentsForBatch.length}
+                />
+
+                <MultiSelectDropdown
+                  label="STATE"
+                  shortLabel="State"
+                  options={statesList}
+                  selected={filterStates}
+                  onChange={setFilterStates}
+                  counts={stateCounts}
+                  totalCount={studentsForState.length}
+                />
+
+                <MultiSelectDropdown
+                  label="DISTRICT"
+                  shortLabel="District"
+                  options={districtsList}
+                  selected={filterDistricts}
+                  onChange={setFilterDistricts}
+                  counts={districtCounts}
+                  totalCount={studentsForDistrict.length}
+                />
+
+                <MultiSelectDropdown
+                  label="COLLEGE"
+                  shortLabel="College"
+                  options={collegesList}
+                  selected={filterColleges}
+                  onChange={setFilterColleges}
+                  counts={collegeCounts}
+                  totalCount={studentsForCollege.length}
+                />
+
+                <MultiSelectDropdown
+                  label="PLACED STATUS"
+                  shortLabel="Placed"
+                  options={placedStatusList}
+                  selected={filterPlacedStatuses}
+                  onChange={setFilterPlacedStatuses}
+                  counts={placedStatusCounts}
+                  totalCount={studentsForPlacedStatus.length}
+                />
+
+                <MultiSelectDropdown
+                  label="JOB TRACK"
+                  shortLabel="Track"
+                  options={tracksList}
+                  selected={filterTracks}
+                  onChange={setFilterTracks}
+                  counts={trackCounts}
+                  totalCount={studentsForTrack.length}
+                  optionFormatter={(track) => track.replace(/_/g, " ")}
+                />
+
+                <EnrollmentDatePicker 
+                  label="ENROLLED DATE"
+                  startDate={filterStartDate}
+                  endDate={filterEndDate}
+                  onApply={(start, end) => {
+                    setFilterStartDate(start);
+                    setFilterEndDate(end);
+                  }}
+                />
+              </div>
+            </div>
+
             <CollegeDistrictStats 
-              students={students}
+              students={filteredStudents}
+              totalUnfilteredCount={students.length}
+              onSelectCollege={(collegeName) => {
+                setFilterColleges([collegeName]);
+                setActiveTab("registry");
+              }}
+              onSelectDistrict={(districtName) => {
+                setFilterDistricts([districtName]);
+                setActiveTab("registry");
+              }}
+            />
+          </div>
+        )}
+
+        {/* PAGE: CONSOLIDATED STATS */}
+        {activeTab === "consolidated" && (
+          <div className="space-y-6 animate-fadeIn">
+            {/* Search Filters Area (Consolidated Stats - Same Filters) */}
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <SlidersHorizontal className="h-4.5 w-4.5 text-indigo-600" />
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Search Filters</span>
+                  {hasActiveFilters && (
+                    <button
+                      onClick={handleClearAllFilters}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-all cursor-pointer shadow-2xs"
+                      title="Clear all applied filters"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      <span>Clear Filters</span>
+                      <span className="px-1.5 py-0.2 bg-rose-200/60 text-rose-800 rounded-full text-[10px] font-mono">
+                        {activeFiltersCount}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Multi-Select Filters Row */}
+              <div className="flex flex-wrap items-end gap-3">
+                <MultiSelectDropdown
+                  label="CENTRE"
+                  shortLabel="Centre"
+                  options={centresList}
+                  selected={filterCentres}
+                  onChange={setFilterCentres}
+                  counts={centreCounts}
+                  totalCount={studentsForCentre.length}
+                />
+
+                <MultiSelectDropdown
+                  label="BATCH"
+                  shortLabel="Batch"
+                  options={batchesList}
+                  selected={filterBatches}
+                  onChange={setFilterBatches}
+                  counts={batchCounts}
+                  totalCount={studentsForBatch.length}
+                />
+
+                <MultiSelectDropdown
+                  label="STATE"
+                  shortLabel="State"
+                  options={statesList}
+                  selected={filterStates}
+                  onChange={setFilterStates}
+                  counts={stateCounts}
+                  totalCount={studentsForState.length}
+                />
+
+                <MultiSelectDropdown
+                  label="DISTRICT"
+                  shortLabel="District"
+                  options={districtsList}
+                  selected={filterDistricts}
+                  onChange={setFilterDistricts}
+                  counts={districtCounts}
+                  totalCount={studentsForDistrict.length}
+                />
+
+                <MultiSelectDropdown
+                  label="COLLEGE"
+                  shortLabel="College"
+                  options={collegesList}
+                  selected={filterColleges}
+                  onChange={setFilterColleges}
+                  counts={collegeCounts}
+                  totalCount={studentsForCollege.length}
+                />
+
+                <MultiSelectDropdown
+                  label="PLACED STATUS"
+                  shortLabel="Placed"
+                  options={placedStatusList}
+                  selected={filterPlacedStatuses}
+                  onChange={setFilterPlacedStatuses}
+                  counts={placedStatusCounts}
+                  totalCount={studentsForPlacedStatus.length}
+                />
+
+                <MultiSelectDropdown
+                  label="JOB TRACK"
+                  shortLabel="Track"
+                  options={tracksList}
+                  selected={filterTracks}
+                  onChange={setFilterTracks}
+                  counts={trackCounts}
+                  totalCount={studentsForTrack.length}
+                  optionFormatter={(track) => track.replace(/_/g, " ")}
+                />
+
+                <EnrollmentDatePicker 
+                  label="ENROLLED DATE"
+                  startDate={filterStartDate}
+                  endDate={filterEndDate}
+                  onApply={(start, end) => {
+                    setFilterStartDate(start);
+                    setFilterEndDate(end);
+                  }}
+                />
+              </div>
+            </div>
+
+            <ConsolidatedStats 
+              students={filteredStudents}
+              totalUnfilteredCount={students.length}
               onSelectCollege={(collegeName) => {
                 setFilterColleges([collegeName]);
                 setActiveTab("registry");
@@ -1604,7 +1910,8 @@ export default function App() {
                                 className="absolute inset-0 h-full w-full object-cover"
                                 onError={(e) => {
                                   const target = e.target as HTMLImageElement;
-                                  if (student.profilePhoto && target.src === student.profilePhoto) {
+                                  if (!target.dataset.triedProxy && student.studentId) {
+                                    target.dataset.triedProxy = "true";
                                     target.src = `/api/zoho/photo/${encodeURIComponent(student.studentId)}`;
                                   } else {
                                     target.style.display = "none";
@@ -1811,17 +2118,101 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB: ADMIN SETTINGS & ZOHO DATABASE MANAGEMENT */}
-        {isAdmin && activeTab === "loader" && (
-          <div className="space-y-6 animate-fadeIn">
-            {/* Top Description bar */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm">
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                <Settings className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                Admin Settings: Database & Brand Management
-              </h3>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Customize your agency branding and inspect the two connected Zoho Creator database reports used as the main database.</p>
+        {/* TAB: ADMIN SETTINGS & ZOHO DATABASE MANAGEMENT (Password Protected) */}
+        {activeTab === "loader" && (
+          !isAdminAuthenticated ? (
+            /* In-page Admin Lock Screen */
+            <div className="max-w-md mx-auto my-12 p-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl text-center space-y-6 animate-fadeIn">
+              <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 flex items-center justify-center text-amber-600 dark:text-amber-400 shadow-xs">
+                <Lock className="h-8 w-8" />
+              </div>
+
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  Admin Settings Locked
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                  Database management and agency branding settings are restricted. Please enter the administrator password to unlock.
+                </p>
+              </div>
+
+              <form onSubmit={handleUnlockAdmin} className="space-y-4 text-left">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                    Admin Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPasswordText ? "text" : "password"}
+                      value={adminPasswordInput}
+                      onChange={(e) => {
+                        setAdminPasswordInput(e.target.value);
+                        setAdminPasswordError(null);
+                      }}
+                      placeholder="Enter admin password..."
+                      autoFocus
+                      className={`w-full pl-3 pr-10 py-2.5 text-xs bg-slate-50 dark:bg-slate-800 border rounded-xl font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-500 transition-all ${
+                        adminPasswordError 
+                          ? "border-rose-400 focus:border-rose-500 text-rose-900 dark:text-rose-200" 
+                          : "border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white"
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordText(!showPasswordText)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      title={showPasswordText ? "Hide password" : "Show password"}
+                    >
+                      {showPasswordText ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {adminPasswordError && (
+                    <p className="text-[11px] text-rose-600 dark:text-rose-400 font-semibold mt-1.5 flex items-center gap-1">
+                      <span>⚠️</span> {adminPasswordError}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("dashboard")}
+                    className="flex-1 py-2.5 px-4 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 px-4 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Unlock className="h-4 w-4" />
+                    <span>Unlock</span>
+                  </button>
+                </div>
+              </form>
             </div>
+          ) : (
+            <div className="space-y-6 animate-fadeIn">
+              {/* Top Description bar */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                    <Settings className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                    Admin Settings: Database & Brand Management
+                  </h3>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Customize your agency branding and inspect the two connected Zoho Creator database reports used as the main database.</p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleLockAdmin}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition shadow-3xs cursor-pointer self-start sm:self-auto"
+                  title="Lock admin session"
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  <span>Lock Session</span>
+                </button>
+              </div>
 
             {/* Admin Grid: Logo Customization + CSV database */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1947,6 +2338,7 @@ export default function App() {
 
             </div>
           </div>
+          )
         )}
 
       </main>
@@ -1955,6 +2347,99 @@ export default function App() {
       <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-4 sm:px-6 lg:px-8 py-6 mt-12 text-center text-xs text-slate-400 dark:text-slate-500 font-medium select-none shrink-0 tracking-wider">
         © 2026 Intensive offline: Student Details Co-pilot • Clean Minimalist Interface
       </footer>
+
+      {/* Admin Authentication Lock Modal Dialog */}
+      {showAdminLockModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-7 space-y-5">
+            <button
+              type="button"
+              onClick={() => {
+                setShowAdminLockModal(false);
+                setAdminPasswordInput("");
+                setAdminPasswordError(null);
+              }}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              title="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0 shadow-2xs">
+                <Lock className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Admin Settings Locked
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Restricted access. Please enter the administrator password to unlock.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleUnlockAdmin} className="space-y-4 pt-1">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                  Admin Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPasswordText ? "text" : "password"}
+                    value={adminPasswordInput}
+                    onChange={(e) => {
+                      setAdminPasswordInput(e.target.value);
+                      setAdminPasswordError(null);
+                    }}
+                    placeholder="Enter admin password..."
+                    autoFocus
+                    className={`w-full pl-3.5 pr-10 py-2.5 text-xs bg-slate-50 dark:bg-slate-800 border rounded-xl font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-500 transition-all ${
+                      adminPasswordError 
+                        ? "border-rose-400 focus:border-rose-500 text-rose-900 dark:text-rose-200" 
+                        : "border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white"
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordText(!showPasswordText)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    title={showPasswordText ? "Hide password" : "Show password"}
+                  >
+                    {showPasswordText ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {adminPasswordError && (
+                  <p className="text-[11px] text-rose-600 dark:text-rose-400 font-semibold mt-1.5 flex items-center gap-1">
+                    <span>⚠️</span> {adminPasswordError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAdminLockModal(false);
+                    setAdminPasswordInput("");
+                    setAdminPasswordError(null);
+                  }}
+                  className="flex-1 py-2.5 px-4 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer text-center"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 px-4 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Unlock className="h-4 w-4" />
+                  <span>Unlock Admin</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
