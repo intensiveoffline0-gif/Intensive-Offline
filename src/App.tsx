@@ -997,11 +997,12 @@ export default function App() {
 
   // Aggregate Core Metrics (KPIs) - dynamically reflects active filters
   const stats = useMemo(() => {
+    // Total Enrolls: from Students_Data_Report Total records count
     const total = filteredStudents.length;
-    // Refunded learners
-    const refunded = filteredStudents.filter(s => s.activeStatus?.toLowerCase() === "refunded").length;
-    // Active Learners includes all non-refunded enrolled learners (Active + Changed Program)
-    const active = Math.max(0, total - refunded);
+    // Active Learners: from Students_Data_Report where Active Status = Active
+    const active = filteredStudents.filter(s => s.activeStatus?.trim().toLowerCase() === "active").length;
+    // Refunds Count: from Students_Data_Report where Active Status = Refunded
+    const refunded = filteredStudents.filter(s => s.activeStatus?.trim().toLowerCase() === "refunded").length;
     
     // Placed count calculation
     const placed = filteredStudents.filter(s => !!(s.placedOrganisation || s.externalPlacedOrganisation)).length;
@@ -1030,6 +1031,7 @@ export default function App() {
       highestCtc: maxCtc > 0 ? `${maxCtc} LPA` : "6.0 LPA"
     };
   }, [filteredStudents]);
+
 
   // Download Filtered Registry list as custom standard HTML-to-CSV Downloader File
   // Safe encoding wrapper to prevent breakage with URI Special chars
@@ -1458,20 +1460,17 @@ export default function App() {
                 title="Total Enrolls" 
                 value={stats.total} 
                 icon={<Users className="h-5 w-5 text-indigo-600" />} 
-                subtitle={hasActiveFilters ? `Filtered out of ${students.length} total enrollments` : "Master Enrollments Report count"}
               />
               <MetricCard 
                 title="Active Learners" 
                 value={stats.active} 
                 icon={<Users className="h-5 w-5 text-emerald-500" />} 
-                subtitle={`${stats.refunded} refunded learners excluded`}
                 trend={{ value: stats.total > 0 ? `${((stats.active/stats.total)*100).toFixed(1)}% Active` : "0% Active", isPositive: true }}
               />
               <MetricCard 
                 title="Refunds Count" 
                 value={stats.refunded} 
                 icon={<ShieldAlert className="h-5 w-5 text-rose-500" />} 
-                subtitle={hasActiveFilters ? "Refunded learners matching current filters" : "Includes early refunds before profile submission"}
                 trend={{ value: stats.total > 0 ? `${((stats.refunded/stats.total)*100).toFixed(1)}% Refunded` : "0% Refunded", isPositive: false }}
               />
             </div>

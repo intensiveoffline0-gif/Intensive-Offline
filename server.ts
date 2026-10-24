@@ -543,7 +543,7 @@ async function syncWithZohoLive(clientSyncTime?: string): Promise<{
     const stLower = masterStatus.toLowerCase();
     if (stLower === "refunded") {
       totalRefunded++;
-    } else {
+    } else if (stLower === "active") {
       totalActive++;
     }
 

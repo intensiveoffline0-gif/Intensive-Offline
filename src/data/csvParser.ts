@@ -116,10 +116,15 @@ export function deduplicateStudents(studentList: Student[]): Student[] {
 
       // 1. Exact Student ID match
       if (sId && dId && sId === dId) return true;
-      // 2. Email match AND Names match
-      if (sEmail && dEmail && sEmail === dEmail && namesMatch(sName, dName)) return true;
-      // 3. Mobile match AND Names match
-      if (sMobile && dMobile && sMobile === dMobile && namesMatch(sName, dName)) return true;
+      // 2. Roll number transition (e.g. temporary I26A -> permanent I26K for the exact same student)
+      const sIsK = sId.includes("k");
+      const dIsK = dId.includes("k");
+      const sIsA = sId.includes("a");
+      const dIsA = dId.includes("a");
+      if ((sIsK && dIsA) || (sIsA && dIsK)) {
+        if (sEmail && dEmail && sEmail === dEmail && namesMatch(sName, dName)) return true;
+        if (sMobile && dMobile && sMobile === dMobile && namesMatch(sName, dName)) return true;
+      }
       return false;
     });
 
@@ -182,7 +187,7 @@ export function parseStudentCSV(csvText: string): Student[] {
       userId: row["user id"] || "",
       studentId: row["student id"] || "",
       mobileNumber: row["mobile number"] || "",
-      activeStatus: (row["active status"] || "").trim().toLowerCase() === "refunded" ? "Refunded" : "Active",
+      activeStatus: (row["active status"] || "").trim() || "Active",
       enrolledOn: row["enrolled on"] || "",
       batchDetails: row["batch details"] || "",
       gender: row["gender"] || "",

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { Student } from "../types";
+import { resolveStudentCollege, isPlaceholderCollege } from "../data/placementPoolLookup";
 import { 
   Building2, MapPin, Search, Download, ExternalLink, 
   TrendingUp, Users, CheckCircle2, Award, ArrowUpDown, 
@@ -127,7 +128,7 @@ export function CollegeDistrictStats({
     const map = new Map<string, RawCollegeEntry>();
 
     for (const s of students) {
-      const colName = (s.graduationCollegeName || "").trim() || "Unspecified / Independent";
+      const colName = resolveStudentCollege(s);
       if (!map.has(colName)) {
         map.set(colName, {
           name: colName,
@@ -559,7 +560,7 @@ export function CollegeDistrictStats({
   // Top 10 Charts Data
   const top10CollegesData = useMemo(() => {
     return collegeMetrics
-      .filter(c => c.name !== "Unspecified / Independent")
+      .filter(c => !isPlaceholderCollege(c.name) && c.name !== "Unspecified / Independent")
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
       .map(c => ({
@@ -609,9 +610,9 @@ export function CollegeDistrictStats({
   }, [branchMetrics]);
 
   // Summary KPIs
-  const totalCollegesCount = collegeMetrics.filter(c => c.name !== "Unspecified / Independent").length;
+  const totalCollegesCount = collegeMetrics.filter(c => !isPlaceholderCollege(c.name) && c.name !== "Unspecified / Independent").length;
   const totalDistrictsCount = districtMetrics.filter(d => d.name !== "Unspecified District").length;
-  const topFeederCollege = collegeMetrics.filter(c => c.name !== "Unspecified / Independent").sort((a, b) => b.total - a.total)[0];
+  const topFeederCollege = collegeMetrics.filter(c => !isPlaceholderCollege(c.name) && c.name !== "Unspecified / Independent").sort((a, b) => b.total - a.total)[0];
   const topDistrict = districtMetrics.filter(d => d.name !== "Unspecified District").sort((a, b) => b.total - a.total)[0];
 
   // CSV Exporters
