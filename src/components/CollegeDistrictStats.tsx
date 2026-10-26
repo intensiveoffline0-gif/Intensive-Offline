@@ -121,7 +121,6 @@ export function CollegeDistrictStats({
   const [subView, setSubView] = useState<ActiveSubView>("colleges");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"total" | "active" | "placed">("total");
-  const [academicRightTab, setAcademicRightTab] = useState<"degrees" | "branches">("degrees");
 
   // Aggregate College Metrics
   const collegeMetrics = useMemo<CollegeMetric[]>(() => {
@@ -664,6 +663,29 @@ export function CollegeDistrictStats({
     document.body.removeChild(link);
   };
 
+  const exportStatesCSV = () => {
+    const headers = ["Rank", "State Name", "Total Students", "Active Students", "Placed", "Districts Count", "Colleges Count", "Top District"];
+    const rows = stateMetrics.map((st, i) => [
+      i + 1,
+      `"${st.state.replace(/"/g, '""')}"`,
+      st.totalStudents,
+      st.activeCount,
+      st.placedCount,
+      st.districtsCount,
+      st.collegesCount,
+      `"${st.topDistrict.replace(/"/g, '""')}"`
+    ]);
+    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `nxtwave_states_stats_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const exportGradYearsCSV = () => {
     const headers = ["Rank", "Graduation Year", "Total Students", "Active Students", "Refunded", "Placed", "Active Rate (%)", "Primary Degree", "Primary Branch"];
     const rows = gradYearMetrics.map((g, i) => [
@@ -733,6 +755,7 @@ export function CollegeDistrictStats({
             <button
               onClick={() => {
                 if (subView === "districts") exportDistrictsCSV();
+                else if (subView === "states") exportStatesCSV();
                 else if (subView === "grad_year") exportGradYearsCSV();
                 else if (subView === "degree_branch") exportDegreesBranchesCSV();
                 else exportCollegesCSV();
@@ -743,6 +766,7 @@ export function CollegeDistrictStats({
               <span>
                 Export {
                   subView === "districts" ? "Districts" :
+                  subView === "states" ? "States" :
                   subView === "grad_year" ? "Grad Years" :
                   subView === "degree_branch" ? "Degrees/Branches" :
                   "Colleges"
@@ -1131,347 +1155,87 @@ export function CollegeDistrictStats({
         </div>
       )}
 
-      {/* VIEW 3: STATE BREAKDOWN WITH GRADUATION YEAR & DEGREE/BRANCH STATS ON THE RIGHT */}
+      {/* VIEW 3: STATE BREAKDOWN */}
       {subView === "states" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          
-          {/* Left Column: State Breakdown */}
-          <div className="lg:col-span-7 space-y-4">
-            <div className="flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-slate-200/90 shadow-2xs">
-              <div className="flex items-center gap-2">
-                <Layers className="h-4 w-4 text-indigo-600" />
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-white px-5 py-3.5 rounded-2xl border border-slate-200/90 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                <Layers className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
                   State Breakdown ({stateMetrics.length} Regional Territories)
                 </h3>
+                <p className="text-xs text-slate-400 font-normal">State-wise distribution of enrolled learners across regional territories</p>
               </div>
-              <span className="text-[11px] font-semibold text-slate-500">
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-lg">
                 {students.length.toLocaleString()} total students
               </span>
+              <button
+                type="button"
+                onClick={exportStatesCSV}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition shadow-xs cursor-pointer"
+              >
+                <Download className="h-3 w-3" />
+                <span>Export States CSV</span>
+              </button>
             </div>
-
-            {stateMetrics.length === 0 ? (
-              <div className="py-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200 font-medium">
-                No states found matching current filters.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                {stateMetrics.map(st => {
-                  const pctOfTotal = students.length > 0 ? Math.round((st.totalStudents / students.length) * 100) : 0;
-                  return (
-                    <div 
-                      key={st.state} 
-                      className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-2xs hover:border-indigo-300 hover:shadow-sm transition"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h4 className="text-sm font-bold text-slate-900">{st.state}</h4>
-                          <p className="text-[11px] text-slate-400 mt-0.5 font-normal">{pctOfTotal}% of total enrollment base</p>
-                        </div>
-                        <span className="text-xs font-extrabold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200 font-mono">
-                          {st.totalStudents}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100 text-xs">
-                        <div className="bg-slate-50/70 p-2 rounded-lg">
-                          <span className="text-slate-400 block text-[10px] font-medium uppercase tracking-wider">Active</span>
-                          <span className="font-bold text-slate-800 text-xs font-mono">{st.activeCount}</span>
-                        </div>
-                        <div className="bg-emerald-50/60 p-2 rounded-lg">
-                          <span className="text-emerald-600 block text-[10px] font-medium uppercase tracking-wider">Placed</span>
-                          <span className="font-bold text-emerald-700 text-xs font-mono">{st.placedCount}</span>
-                        </div>
-                        <div className="bg-slate-50/70 p-2 rounded-lg">
-                          <span className="text-slate-400 block text-[10px] font-medium uppercase tracking-wider">Districts</span>
-                          <span className="font-bold text-slate-800 text-xs font-mono">{st.districtsCount}</span>
-                        </div>
-                        <div className="bg-slate-50/70 p-2 rounded-lg">
-                          <span className="text-slate-400 block text-[10px] font-medium uppercase tracking-wider">Colleges</span>
-                          <span className="font-bold text-slate-800 text-xs font-mono">{st.collegesCount}</span>
-                        </div>
-                      </div>
-
-                      <div className="mt-2.5 pt-2 border-t border-slate-100 text-[11px] flex items-center justify-between">
-                        <span className="text-slate-400 font-medium">Top District:</span>
-                        <span className="font-bold text-slate-700 truncate max-w-[140px]">{st.topDistrict}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
 
-          {/* Right Column: Graduation Year Stats & Degree/Branch Stats */}
-          <div className="lg:col-span-5 space-y-5">
-            
-            {/* Panel 1: Graduation Year Stats */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600">
-                    <GraduationCap className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                      Graduation Year Stats
-                    </h3>
-                    <p className="text-[10px] text-slate-400">Passing cohorts & placement track</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={exportGradYearsCSV}
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-2 py-1 rounded-lg transition cursor-pointer"
-                  title="Export Graduation Year CSV"
-                >
-                  <Download className="h-3 w-3" />
-                  <span>CSV</span>
-                </button>
-              </div>
-
-              {gradYearMetrics.length === 0 ? (
-                <div className="py-6 text-center text-slate-400 text-xs font-medium">
-                  No graduation records available.
-                </div>
-              ) : (
-                <div className="mt-3 space-y-3">
-                  {/* Top Highlight Summary */}
-                  <div className="grid grid-cols-3 gap-2 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100 text-center">
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase font-semibold block">Cohorts</span>
-                      <span className="text-xs font-bold text-slate-800 font-mono">{gradYearMetrics.length}</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase font-semibold block">Top Cohort</span>
-                      <span className="text-xs font-bold text-indigo-600 truncate block">
-                        {gradYearMetrics[0]?.year || "—"}
+          {stateMetrics.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200 font-medium">
+              No states found matching current filters.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {stateMetrics.map(st => {
+                const pctOfTotal = students.length > 0 ? Math.round((st.totalStudents / students.length) * 100) : 0;
+                return (
+                  <div 
+                    key={st.state} 
+                    className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-2xs hover:border-indigo-300 hover:shadow-sm transition"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">{st.state}</h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5 font-normal">{pctOfTotal}% of total enrollment base</p>
+                      </div>
+                      <span className="text-xs font-extrabold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200 font-mono">
+                        {st.totalStudents}
                       </span>
                     </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Placed</span>
-                      <span className="text-xs font-bold text-emerald-600 font-mono">
-                        {gradYearMetrics.reduce((acc, y) => acc + y.placed, 0)}
-                      </span>
+
+                    <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100 text-xs">
+                      <div className="bg-slate-50/70 p-2 rounded-lg">
+                        <span className="text-slate-400 block text-[10px] font-medium uppercase tracking-wider">Active</span>
+                        <span className="font-bold text-slate-800 text-xs font-mono">{st.activeCount}</span>
+                      </div>
+                      <div className="bg-emerald-50/60 p-2 rounded-lg">
+                        <span className="text-emerald-600 block text-[10px] font-medium uppercase tracking-wider">Placed</span>
+                        <span className="font-bold text-emerald-700 text-xs font-mono">{st.placedCount}</span>
+                      </div>
+                      <div className="bg-slate-50/70 p-2 rounded-lg">
+                        <span className="text-slate-400 block text-[10px] font-medium uppercase tracking-wider">Districts</span>
+                        <span className="font-bold text-slate-800 text-xs font-mono">{st.districtsCount}</span>
+                      </div>
+                      <div className="bg-slate-50/70 p-2 rounded-lg">
+                        <span className="text-slate-400 block text-[10px] font-medium uppercase tracking-wider">Colleges</span>
+                        <span className="font-bold text-slate-800 text-xs font-mono">{st.collegesCount}</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-2.5 pt-2 border-t border-slate-100 text-[11px] flex items-center justify-between">
+                      <span className="text-slate-400 font-medium">Top District:</span>
+                      <span className="font-bold text-slate-700 truncate max-w-[140px]">{st.topDistrict}</span>
                     </div>
                   </div>
-
-                  {/* List of Graduation Passing Years */}
-                  <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
-                    {gradYearMetrics.map((yr) => {
-                      const pctOfTotal = students.length > 0 ? Math.round((yr.total / students.length) * 100) : 0;
-                      return (
-                        <div 
-                          key={yr.year}
-                          className="p-3 rounded-xl bg-white border border-slate-100 hover:border-slate-300 transition-all shadow-3xs"
-                        >
-                          <div className="flex items-center justify-between mb-1.5">
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-xs font-extrabold font-mono border border-indigo-100">
-                                {yr.year}
-                              </span>
-                              <span className="text-xs font-bold text-slate-800">
-                                {yr.total} <span className="text-[11px] font-normal text-slate-400">({pctOfTotal}%)</span>
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              {yr.placed > 0 && (
-                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  <Award className="h-2.5 w-2.5" />
-                                  {yr.placed}
-                                </span>
-                              )}
-                              <span className="text-[10px] font-semibold text-slate-500">
-                                {yr.activeRate}% Active
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Progress bar */}
-                          <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden flex">
-                            <div 
-                              className="bg-indigo-600 h-full rounded-full transition-all" 
-                              style={{ width: `${Math.min(100, yr.activeRate)}%` }}
-                              title={`Active: ${yr.active}`}
-                            />
-                            {yr.refunded > 0 && (
-                              <div 
-                                className="bg-rose-400 h-full rounded-full transition-all" 
-                                style={{ width: `${Math.min(100 - yr.activeRate, Math.round((yr.refunded / yr.total) * 100))}%` }}
-                                title={`Refunded: ${yr.refunded}`}
-                              />
-                            )}
-                          </div>
-
-                          {/* Top Degree / Stream preview */}
-                          {(yr.topDegree !== "—" || yr.topBranch !== "—") && (
-                            <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400 font-medium">
-                              <span className="truncate max-w-[150px]">
-                                Deg: <strong className="text-slate-600">{yr.topDegree}</strong>
-                              </span>
-                              <span className="truncate max-w-[150px]">
-                                Stream: <strong className="text-slate-600">{yr.topBranch}</strong>
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                );
+              })}
             </div>
-
-            {/* Panel 2: Degree & Branch Stats */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
-                    <BookOpen className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                      Degree & Branch Stats
-                    </h3>
-                    <p className="text-[10px] text-slate-400">Academic programs & stream distribution</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={exportDegreesBranchesCSV}
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 px-2 py-1 rounded-lg transition cursor-pointer"
-                  title="Export Degrees & Branches CSV"
-                >
-                  <Download className="h-3 w-3" />
-                  <span>CSV</span>
-                </button>
-              </div>
-
-              {/* Toggle Sub-Tabs between Degrees and Branches */}
-              <div className="mt-3 flex items-center p-1 bg-slate-100 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setAcademicRightTab("degrees")}
-                  className={`flex-1 py-1 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    academicRightTab === "degrees"
-                      ? "bg-white text-slate-900 shadow-2xs"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  Top Degrees ({degreeMetrics.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAcademicRightTab("branches")}
-                  className={`flex-1 py-1 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    academicRightTab === "branches"
-                      ? "bg-white text-slate-900 shadow-2xs"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  Streams & Branches ({branchMetrics.length})
-                </button>
-              </div>
-
-              {/* Degrees Tab Content */}
-              {academicRightTab === "degrees" && (
-                <div className="mt-3 space-y-2 max-h-[320px] overflow-y-auto pr-1">
-                  {degreeMetrics.length === 0 ? (
-                    <div className="py-6 text-center text-slate-400 text-xs">No degree records available.</div>
-                  ) : (
-                    degreeMetrics.map((deg) => {
-                      const pct = students.length > 0 ? Math.round((deg.total / students.length) * 100) : 0;
-                      return (
-                        <div 
-                          key={deg.degree}
-                          className="p-2.5 rounded-xl bg-slate-50/70 border border-slate-100 hover:border-emerald-200 transition-all text-xs"
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-bold text-slate-800 truncate max-w-[180px]" title={deg.degree}>
-                              {deg.degree}
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-extrabold text-slate-900 font-mono">{deg.total}</span>
-                              <span className="text-[10px] text-slate-400">({pct}%)</span>
-                              {deg.placed > 0 && (
-                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                  {deg.placed} Placed
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="w-full bg-slate-200 h-1 rounded-full overflow-hidden">
-                            <div 
-                              className="bg-emerald-600 h-full rounded-full" 
-                              style={{ width: `${Math.min(100, Math.max(3, pct))}%` }} 
-                            />
-                          </div>
-
-                          <div className="mt-1 flex items-center justify-between text-[10px] text-slate-400">
-                            <span>Active: <strong className="text-slate-600">{deg.active}</strong> ({deg.activeRate}%)</span>
-                            {deg.topBranch !== "—" && (
-                              <span className="truncate max-w-[150px]">Top: <strong className="text-slate-600">{deg.topBranch}</strong></span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              )}
-
-              {/* Branches Tab Content */}
-              {academicRightTab === "branches" && (
-                <div className="mt-3 space-y-2 max-h-[320px] overflow-y-auto pr-1">
-                  {branchMetrics.length === 0 ? (
-                    <div className="py-6 text-center text-slate-400 text-xs">No branch records available.</div>
-                  ) : (
-                    branchMetrics.map((br) => {
-                      const pct = students.length > 0 ? Math.round((br.total / students.length) * 100) : 0;
-                      return (
-                        <div 
-                          key={br.branch}
-                          className="p-2.5 rounded-xl bg-slate-50/70 border border-slate-100 hover:border-indigo-200 transition-all text-xs"
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-bold text-slate-800 truncate max-w-[180px]" title={br.branch}>
-                              {br.branch}
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-extrabold text-slate-900 font-mono">{br.total}</span>
-                              <span className="text-[10px] text-slate-400">({pct}%)</span>
-                              {br.placed > 0 && (
-                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                  {br.placed} Placed
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="w-full bg-slate-200 h-1 rounded-full overflow-hidden">
-                            <div 
-                              className="bg-indigo-600 h-full rounded-full" 
-                              style={{ width: `${Math.min(100, Math.max(3, pct))}%` }} 
-                            />
-                          </div>
-
-                          <div className="mt-1 flex items-center justify-between text-[10px] text-slate-400">
-                            <span>Active: <strong className="text-slate-600">{br.active}</strong> ({br.activeRate}%)</span>
-                            {br.topDegree !== "—" && (
-                              <span className="truncate max-w-[150px]">Top: <strong className="text-slate-600">{br.topDegree}</strong></span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              )}
-            </div>
-
-          </div>
-
+          )}
         </div>
       )}
 
